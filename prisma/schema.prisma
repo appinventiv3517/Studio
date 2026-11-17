@@ -18,6 +18,10 @@ model User {
   role         String // Owner | Manager | Receptionist | Stylist
   active       Boolean  @default(true)
   createdAt    DateTime @default(now())
+  // Two-factor sign-in with an authenticator app. The secret stays empty until the owner finishes setup at first sign-in.
+  twoFactorSecret   String?
+  twoFactorLastStep Int      @default(0) // last 30-second step accepted, so a code cannot be used twice
+  backupCodes       String   @default("[]") // JSON list of bcrypt hashes of unused backup codes
   sessions     Session[]
 }
 

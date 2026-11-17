@@ -1,6 +1,7 @@
 // End-to-end check of the API. Run `npm run build` first, then `npm run test:api`.
 // It makes its own database and server, so your real data is never touched.
 import { execSync, spawn, type ChildProcess } from 'child_process';
+import { createHmac } from 'crypto';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { PrismaClient } from '@prisma/client';
@@ -32,7 +33,31 @@ function check(name: string, cond: boolean, detail?: unknown) {
 }
 const works = (name: string, r: Res) => { check(name, r.ok, { status: r.status, error: r.error }); return r.data; };
 const refused = (name: string, r: Res, status?: number) => check(name, !r.ok && (status === undefined || r.status === status), { status: r.status, error: r.error });
-const login = async (email: string, password: string) => (await call('POST', '/auth/login', { email, password }, { token: null }));
+const testDb = new PrismaClient({ datasources: { db: { url } } });
+
+// Authenticator codes, worked out here independently of the app (RFC 6238), so the app's codes are checked against a second copy.
+function totp(secret: string, offset = 0) {
+  const A = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const bits = [...secret].map((c) => A.indexOf(c).toString(2).padStart(5, '0')).join('');
+  const key = Buffer.from(bits.match(/.{8}/g)!.map((b) => parseInt(b, 2)));
+  const counter = Buffer.alloc(8);
+  counter.writeBigUInt64BE(BigInt(Math.floor(Date.now() / 30000) + offset));
+  const h = createHmac('sha1', key).update(counter).digest();
+  const o = h[h.length - 1] & 15;
+  return String((((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3]) % 1e6).padStart(6, '0');
+}
+const verify = (challenge: string, code: string) => call('POST', '/auth/verify-otp', { challenge, code }, { token: null });
+
+// Signing in is two steps: the password, then the code. This does both, and sets up the authenticator the first time.
+const secrets: Record<string, string> = {};
+const login = async (email: string, password: string) => {
+  const r = await call('POST', '/auth/login', { email, password }, { token: null });
+  if (!r.ok) return r;
+  if (r.data.step === 'setup') secrets[email] = r.data.secret;
+  // Many sign-ins in one test would collide with "a code works once", so forget the last used code first.
+  await testDb.user.updateMany({ data: { twoFactorLastStep: 0 } });
+  return verify(r.data.challenge, totp(secrets[email]));
+};
 
 async function run() {
   const date = new Date().toISOString().slice(0, 10);
@@ -191,6 +216,29 @@ async function run() {
   for (let i = 0; i < 5; i++) await login('reception@salon.com', 'wrong');
   refused('sixth attempt is blocked', await login('reception@salon.com', 'reception123'), 429);
   works('other accounts are not affected', await login('admin@salon.com', 'admin123'));
+
+  console.log('Two-factor sign-in (authenticator app)');
+  execSync('npx tsx scripts/reset-2fa.ts', { env, stdio: 'ignore' });
+  refused('reset ends the owner\'s sessions', await call('GET', '/me'), 401);
+  const first = await call('POST', '/auth/login', { email: 'admin@salon.com', password: 'admin123' }, { token: null });
+  check('password alone does not sign in; setup gives a QR code and key', first.ok && !first.data.token && first.data.step === 'setup' && first.data.qr.startsWith('data:image/png') && /^[A-Z2-7]{32}$/.test(first.data.secret), first.data);
+  refused('the sign-in step is not a session token', await call('GET', '/me', undefined, { token: first.data.challenge }), 401);
+  refused('wrong code in setup is refused', await verify(first.data.challenge, '000000'), 401);
+  refused('tampered sign-in step is refused', await verify(first.data.challenge.slice(0, -3) + 'abc', totp(first.data.secret)), 400);
+  const secret: string = first.data.secret;
+  const setup = works('right code finishes setup and signs in', await verify(first.data.challenge, totp(secret)));
+  check('eight backup codes are given', setup?.backupCodes?.length === 8);
+  works('the new session works', await call('GET', '/me', undefined, { token: setup?.token }));
+  refused('setup cannot run twice', await verify(first.data.challenge, totp(secret, 1)), 400);
+  const next = await call('POST', '/auth/login', { email: 'admin@salon.com', password: 'admin123' }, { token: null });
+  check('next sign-in asks for a code, no QR', next.ok && next.data.step === 'verify' && !next.data.qr && !next.data.token, next.data);
+  refused('a code cannot be used twice', await verify(next.data.challenge, totp(secret)), 401);
+  works('the next code works', await verify(next.data.challenge, totp(secret, 1)));
+  works('a backup code signs in', await verify(next.data.challenge, setup.backupCodes[0]));
+  refused('a backup code works only once', await verify(next.data.challenge, setup.backupCodes[0]), 401);
+  refused('letters are not a code', await verify(next.data.challenge, 'abcdef'), 401);
+  for (let i = 0; i < 5; i++) await verify(next.data.challenge, '111111');
+  refused('too many wrong codes are blocked', await verify(next.data.challenge, setup.backupCodes[1]), 429);
 }
 
 async function main() {
@@ -211,6 +259,7 @@ async function main() {
     }
     await run();
   } finally {
+    await testDb.$disconnect();
     server?.kill();
     try { execSync(`fuser -k ${PORT}/tcp`, { stdio: 'ignore' }); } catch { /* already stopped */ }
     rmSync(dir, { recursive: true, force: true });

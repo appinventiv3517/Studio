@@ -19,6 +19,9 @@ const sign = (data: string) => createHmac('sha256', secret()).update(data).diges
 
 export const TOKEN_MAX_AGE = MAX_AGE;
 
+/** Signs a short-lived value, such as the step between password and code. `kind` stops it being mistaken for a session token. */
+export const signFor = (kind: string, data: string) => sign(`${kind}:${data}`);
+
 let tableReady: Promise<unknown> | null = null;
 /** Databases made before sessions existed (including installed desktop apps) get the table the first time it is needed. */
 function ensureSessionTable() {

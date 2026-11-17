@@ -7,7 +7,7 @@ export type Result<T = undefined> = { ok: true; data?: T } | { ok: false; error:
 export async function call<T = undefined>(method: string, path: string, body?: unknown): Promise<Result<T>> {
   const isForm = typeof FormData !== 'undefined' && body instanceof FormData;
   // The session kept in this browser (12 hours) is sent with every call.
-  const session = path === '/auth/login' ? null : readSession();
+  const session = path === '/auth/login' || path === '/auth/verify-otp' ? null : readSession();
   const headers: Record<string, string> = {};
   if (session) headers.Authorization = `Bearer ${session.token}`;
   if (body !== undefined && !isForm) headers['Content-Type'] = 'application/json';
@@ -18,7 +18,7 @@ export async function call<T = undefined>(method: string, path: string, body?: u
       headers,
       body: body === undefined ? undefined : isForm ? (body as FormData) : JSON.stringify(body),
     });
-    if (res.status === 401 && path !== '/auth/login' && path !== '/auth/logout') {
+    if (res.status === 401 && path !== '/auth/login' && path !== '/auth/verify-otp' && path !== '/auth/logout') {
       clearSession();
       window.location.assign('/login');
     }

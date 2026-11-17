@@ -18,6 +18,10 @@ Sign in with `admin@salon.com` / `admin123`. Only the owner can sign in: logins 
 (Manager, Receptionist, Stylist) are refused, and an existing session for one stops working. Change the password
 before real use (click your name in the menu).
 
+Every sign-in also needs a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…).
+The first time, the page shows a QR code to scan, then 8 one-time backup codes: save them. Lost the phone? Type a backup
+code in place of the 6 digits, or run `npm run reset-2fa` on the computer that runs the app and sign in again to set it up fresh.
+
 ### As a Mac app
 
 ```bash
@@ -46,6 +50,7 @@ Data is kept in `~/.config/Salon Studio/salon.db` on Linux and `%APPDATA%\Salon 
 |---|---|
 | `npm run setup` | Creates the database and loads demo data. If it already has data, it is left alone |
 | `npm run setup:demo` | Wipes everything and reloads demo data |
+| `npm run reset-2fa` | Turns two-factor sign-in off for the owner so it can be set up again (lost phone) |
 | `npm run setup:fresh` | Wipes everything and leaves only the owner login (with a random password, shown once), business details and service categories |
 
 ## API
@@ -56,14 +61,16 @@ each URL is one `route.ts` file under `src/app/api/` (for example `src/app/api/c
 
 **Tests.** `npm run build`, then `npm run test:api`. It starts the app on a temporary database and runs about 100 checks of the API (every endpoint, owner-only sign-in, sign-out, rate limit, CORS), then cleans up.
 
-**Sessions.** Signing in gives a token that lasts 12 hours. The browser keeps it in local storage and sends it with every API call; it also sets a login cookie so page loads work. When the 12 hours are up (or the browser no longer has the token), the app signs the person out. Pages and the sidebar ask `GET /api/me` who is signed in, so only the API looks users up in the database. Signing out ends that session on the server, so a copied token stops working at once; changing a password or switching a login off signs that person out everywhere. After 5 wrong passwords for an email (or 20 from one address) sign-in is blocked for 15 minutes.
+**Sessions.** Signing in gives a token that lasts 12 hours. The browser keeps it in local storage and sends it with every API call; it also sets a login cookie so page loads work. When the 12 hours are up (or the browser no longer has the token), the app signs the person out. Pages and the sidebar ask `GET /api/me` who is signed in, so only the API looks users up in the database. Signing out ends that session on the server, so a copied token stops working at once; changing a password or switching a login off signs that person out everywhere. Signing in also needs the authenticator code (see the top of this file). After 5 wrong passwords for an email (or 20 from one address) sign-in is blocked for 15 minutes.
 
 **Sharing the link.** Pasting the address into WhatsApp, Slack, Facebook, X or a message shows the salon name, a short description and the logo (`public/share.png`). Set `SITE_URL` in `.env` to the public address (for example `https://salon.example.com`) so chat apps can fetch the image; the tags are in `src/app/layout.tsx`. The app is marked `noindex`, so search engines skip it. The preview is the same for every page, because the app is behind sign-in.
 
 **Other websites.** Browsers only let a website on another domain call the API if its address is listed in `ALLOWED_ORIGINS` in `.env` (comma separated). Those sites sign in with the token, not the cookie. Mobile apps and servers are not affected.
 
-Sign in with `POST /api/auth/login` (`{ "email", "password" }`). It sets the login cookie and returns a `token`;
-other clients send it as `Authorization: Bearer <token>`. Replies are `{ "ok": true, "data": … }` or
+Signing in takes two calls. `POST /api/auth/login` (`{ "email", "password" }`) checks the password and returns `{ step, challenge }`
+(valid 5 minutes, no session yet). `step` is `verify`, or `setup` the first time, which also returns `secret` and a `qr` image.
+Then `POST /api/auth/verify-otp` (`{ "challenge", "code" }`, the 6-digit code or a backup code) sets the login cookie and returns a `token`
+(plus `backupCodes` once, after setup). A code works once; 5 wrong codes block sign-in for 15 minutes. Other clients send the token as `Authorization: Bearer <token>`. Replies are `{ "ok": true, "data": … }` or
 `{ "ok": false, "error": "…" }` with status 401 (not signed in), 403 (role not allowed), 422 (invalid input),
 409 or 400 (duplicate, or a rule was broken).
 
@@ -167,6 +174,7 @@ prisma/
 electron/                  desktop app shell (main.js starts server.js)
 scripts/
   test-api.ts              end-to-end API tests (npm run test:api)
+  reset-2fa.ts             turns the owner's two-factor sign-in off (npm run reset-2fa)
   check-structure.ts       enforces the rules below (runs in npm run check)
 live/                      single-file browser version published on Claude
 public/                    logo and static files
@@ -177,22 +185,23 @@ src/
     api/                   THE API: every HTTP endpoint, one route.ts per URL
       customers/route.ts         GET list, POST create        -> /api/customers
       customers/[id]/route.ts    GET, PUT, DELETE             -> /api/customers/:id
-      invoices/[id]/payments/route.ts, auth/login/route.ts, ... (same pattern for every endpoint)
+      invoices/[id]/payments/route.ts, auth/login/route.ts, auth/verify-otp/route.ts, ... (same pattern for every endpoint)
       [...path]/route.ts         JSON 404 for unknown addresses
       _lib/handler.ts            route(): reads the body, runs the endpoint, sends { ok, data } or { ok, error }
     (app)/<screen>/        SCREENS, one folder per screen (customers/, billing/, inventory/ ...)
       page.tsx               loads its data with api('/...') and lays it out
       *.tsx                  that screen's forms, tables and buttons (browser code)
-    login/                 sign-in page
+    login/                 sign-in page (password, then the authenticator code)
   client/                  browser-only code
     api/<feature>.ts         what screens call to save: small functions that call the endpoints above
+    api/auth.ts              the two sign-in calls (password, then code)
     api/call.ts              the fetch helper (adds the 12-hour token, handles errors)
     session.ts, use-action.ts
   components/              shared UI used by several screens (modal, toast, select, sidebar, chart)
   lib/                     plain helpers that run anywhere: format, validate, roles, billing maths, csv, period
   server/                  the BACKEND. Only this folder reads or writes the database.
     db.ts                    the Prisma client
-    auth/                    session.ts (tokens, sign-out, who is signed in), login.ts (password check, rate limit)
+    auth/                    session.ts (tokens, sign-out, who is signed in), login.ts (password check, code check, rate limit), totp.ts (authenticator codes)
     api/                     attempt.ts (errors to JSON), helpers.ts (query-string helpers), fetch.ts (how screens call the API)
     features/<feature>/      one folder per part of the business
       service.ts               writes: create, update, delete (checks, rules, transactions)

@@ -1,14 +1,19 @@
 import 'server-only';
 import bcrypt from 'bcryptjs';
+import { randomBytes, timingSafeEqual } from 'crypto';
+import QRCode from 'qrcode';
 import { headers } from 'next/headers';
 import { db } from '@/server/db';
-import { ActionError, endSession, startSession, TOKEN_MAX_AGE } from './session';
+import { ActionError, endSession, signFor, startSession, TOKEN_MAX_AGE } from './session';
+import { matchCode, newSecret, otpauthUri } from './totp';
 
 // Wrong-password limits. Failures are counted per email and per address for 15 minutes; the counts live in memory,
 // so they reset when the app restarts.
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_PER_EMAIL = 5;
 const MAX_PER_ADDRESS = 20;
+const MAX_CODES = 5; // wrong authenticator codes per person in that time
+const CHALLENGE_MS = 5 * 60 * 1000; // time allowed between the password and the code
 const failures = new Map<string, { count: number; since: number }>();
 
 function tally(key: string, max: number, add = false) {
@@ -28,7 +33,32 @@ function address() {
   return (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'local').trim();
 }
 
-/** Checks the email and password, starts a session, and returns a bearer token for API clients. */
+type Challenge = { u: string; k: 'verify' | 'setup'; x?: string; e: number };
+
+/** Proof that the password was right, valid for five minutes. For first-time setup it also carries the new secret. */
+function makeChallenge(c: Challenge) {
+  const payload = Buffer.from(JSON.stringify(c)).toString('base64url');
+  return `${payload}.${signFor('2fa', payload)}`;
+}
+
+function readChallenge(token: string): Challenge | null {
+  const [payload, sig] = token.split('.');
+  if (!payload || !sig) return null;
+  const expected = Buffer.from(signFor('2fa', payload));
+  const given = Buffer.from(sig);
+  if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
+  try {
+    const c = JSON.parse(Buffer.from(payload, 'base64url').toString()) as Challenge;
+    return typeof c.u === 'string' && (c.k === 'verify' || c.k === 'setup') && c.e > Date.now() ? c : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Step one of signing in: checks the email and password. No session starts yet. The owner must still give a
+ * code from the authenticator app (step two, verifyCode). The first time, the answer carries a QR code to set the app up.
+ */
 export async function login(email: string, password: string) {
   const e = email.trim().toLowerCase();
   if (!e || !password) throw new ActionError('Enter your email and password.');
@@ -45,8 +75,63 @@ export async function login(email: string, password: string) {
   if (user.role !== 'Owner') throw new ActionError('Only the owner can sign in.', 403);
   if (!user.active) throw new ActionError('This login has been switched off. Ask the owner to turn it back on.', 403);
   failures.delete(`e:${e}`);
+
+  const expires = Date.now() + CHALLENGE_MS;
+  if (user.twoFactorSecret) return { step: 'verify' as const, challenge: makeChallenge({ u: user.id, k: 'verify', e: expires }) };
+
+  const secret = newSecret();
+  const issuer = (await db.settings.findUnique({ where: { id: 1 }, select: { name: true } }))?.name || 'Salon Studio';
+  const qr = await QRCode.toDataURL(otpauthUri(secret, user.email, issuer), { margin: 1, width: 220 });
+  return { step: 'setup' as const, challenge: makeChallenge({ u: user.id, k: 'setup', x: secret, e: expires }), secret, qr };
+}
+
+const normalizeBackup = (code: string) => code.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** Step two: checks the 6-digit code (or a backup code), then starts the session. After first-time setup it also returns the backup codes, once. */
+export async function verifyCode(challenge: string, code: string) {
+  const c = readChallenge(challenge);
+  if (!c) throw new ActionError('That sign-in has expired. Enter your password again.', 400);
+  const text = code.trim();
+  if (!text) throw new ActionError('Enter the code from your authenticator app.');
+  const key = `o:${c.u}`;
+  const wait = tally(key, MAX_CODES);
+  if (wait) throw new ActionError(`Too many wrong codes. Try again in ${wait} minute${wait > 1 ? 's' : ''}.`, 429);
+
+  const user = await db.user.findUnique({ where: { id: c.u } });
+  if (!user || user.role !== 'Owner' || !user.active) throw new ActionError('This login cannot sign in.', 403);
+  const wrong = () => { tally(key, MAX_CODES, true); return new ActionError('That code is not right. Check the code in your app and try again.', 401); };
+  let backupCodes: string[] | undefined;
+
+  if (c.k === 'setup') {
+    if (user.twoFactorSecret) throw new ActionError('Two-factor sign-in is already set up. Enter your password again.', 400);
+    const step = matchCode(c.x!, text);
+    if (step === null) throw wrong();
+    backupCodes = Array.from({ length: 8 }, () => { const h = randomBytes(5).toString('hex'); return `${h.slice(0, 5)}-${h.slice(5)}`; });
+    const hashes = await Promise.all(backupCodes.map((b) => bcrypt.hash(normalizeBackup(b), 10)));
+    // Only the first finished setup counts, so two browsers cannot both claim the secret.
+    const saved = await db.user.updateMany({ where: { id: user.id, twoFactorSecret: null }, data: { twoFactorSecret: c.x!, twoFactorLastStep: step, backupCodes: JSON.stringify(hashes) } });
+    if (!saved.count) throw new ActionError('Two-factor sign-in is already set up. Enter your password again.', 400);
+  } else if (/^\d{6}$/.test(text)) {
+    const step = user.twoFactorSecret ? matchCode(user.twoFactorSecret, text) : null;
+    if (step === null) throw wrong();
+    // A code works once: the step must be newer than the last one accepted.
+    const used = await db.user.updateMany({ where: { id: user.id, twoFactorLastStep: { lt: step } }, data: { twoFactorLastStep: step } });
+    if (!used.count) throw wrong();
+  } else {
+    // Not six digits, so it can only be a backup code. Each one works once.
+    const hashes = JSON.parse(user.backupCodes) as string[];
+    const given = normalizeBackup(text);
+    let hit = -1;
+    for (let i = 0; i < hashes.length && hit < 0; i++) if (await bcrypt.compare(given, hashes[i])) hit = i;
+    if (hit < 0) throw wrong();
+    const left = hashes.filter((_, i) => i !== hit);
+    const used = await db.user.updateMany({ where: { id: user.id, backupCodes: user.backupCodes }, data: { backupCodes: JSON.stringify(left) } });
+    if (!used.count) throw wrong();
+  }
+
+  failures.delete(key);
   const token = await startSession(user.id);
-  return { token, expiresIn: TOKEN_MAX_AGE, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
+  return { token, expiresIn: TOKEN_MAX_AGE, user: { id: user.id, name: user.name, email: user.email, role: user.role }, ...(backupCodes && { backupCodes }) };
 }
 
 export async function logout() {
