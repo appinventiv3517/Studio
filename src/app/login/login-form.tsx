@@ -30,7 +30,7 @@ export function LoginForm() {
     const form = new FormData(e.currentTarget);
     setPending(true);
     setError(null);
-    const res = await verifyCode(step.challenge, String(form.get('code')));
+    const res = await verifyCode(step.challenge, String(form.get('otp-code')));
     if (res.ok && res.data) {
       if (res.data.backupCodes) setDone({ ...res.data, backupCodes: res.data.backupCodes });
       else return finish(res.data);
@@ -55,7 +55,7 @@ export function LoginForm() {
 
   if (step) {
     return (
-      <form onSubmit={code} className="space-y-4">
+      <form onSubmit={code} autoComplete="off" className="space-y-4">
         {step.step === 'setup' ? (
           <>
             <h3 className="text-[18px] font-bold">Set up two-factor sign-in</h3>
@@ -76,7 +76,7 @@ export function LoginForm() {
             <p className="text-[13.5px] text-ink-soft">Open your authenticator app and type the 6-digit code. Lost your phone? Type one of your backup codes instead.</p>
           </>
         )}
-        <Field label="Code"><Input id="code" name="code" inputMode="text" autoComplete="one-time-code" placeholder="123456" required autoFocus /></Field>
+        <Field label="Code"><Input key={step.challenge} id="otp-code" name="otp-code" type="text" inputMode="text" autoComplete="off" data-lpignore="true" data-1p-ignore placeholder="123456" required autoFocus /></Field>
         {errorBox}
         <Button type="submit" disabled={pending} className="w-full">{pending ? 'Checking…' : step.step === 'setup' ? 'Turn on and sign in' : 'Verify and sign in'}</Button>
         <Button variant="ghost" className="w-full" onClick={() => { setStep(null); setError(null); }}>Back</Button>
