@@ -42,6 +42,7 @@ export async function login(email: string, password: string) {
     tally(`a:${ip}`, MAX_PER_ADDRESS, true);
     throw new ActionError('That email and password do not match.', 401);
   }
+  if (user.role !== 'Owner') throw new ActionError('Only the owner can sign in.', 403);
   if (!user.active) throw new ActionError('This login has been switched off. Ask the owner to turn it back on.', 403);
   failures.delete(`e:${e}`);
   const token = await startSession(user.id);

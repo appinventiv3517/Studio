@@ -159,30 +159,25 @@ async function run() {
   works('user update', await call('PUT', `/users/${nu}`, { name: `U ${U}`, email: `u${U}@x.com`, role: 'Manager', active: true }));
   refused('wrong current password is refused', await call('POST', '/me/password', { current: 'bad', next: 'newpassword1' }), 400);
 
-  console.log('Roles');
-  const rec = (await login('reception@salon.com', 'reception123')).data.token;
-  refused('receptionist cannot change settings', await call('PUT', '/settings', {}, { token: rec }), 403);
-  refused('receptionist cannot list logins', await call('GET', '/users', undefined, { token: rec }), 403);
-  works('receptionist can list clients', await call('GET', '/customers', undefined, { token: rec }));
+  console.log('Only the owner can sign in');
+  refused('manager cannot sign in', await login('manager@salon.com', 'manager123'), 403);
+  refused('receptionist cannot sign in', await login('reception@salon.com', 'reception123'), 403);
+  refused('a new non-owner login cannot sign in', await login(`u${U}@x.com`, 'password123'), 403);
+  works('user delete', await call('DELETE', `/users/${nu}`));
 
   console.log('Sign-out cancels the token');
-  const a = (await login('manager@salon.com', 'manager123')).data.token;
-  const b = (await login('manager@salon.com', 'manager123')).data.token;
+  const a = (await login('admin@salon.com', 'admin123')).data.token;
+  const b = (await login('admin@salon.com', 'admin123')).data.token;
   works('first session works', await call('GET', '/me', undefined, { token: a }));
   works('sign out', await call('POST', '/auth/logout', {}, { token: a }));
   refused('signed-out token no longer works', await call('GET', '/me', undefined, { token: a }), 401);
   works('another session is untouched', await call('GET', '/me', undefined, { token: b }));
-  works('password change', await call('POST', '/me/password', { current: 'manager123', next: 'manager-new-1' }, { token: b }));
-  const c = (await login('manager@salon.com', 'manager-new-1')).data.token;
+  works('password change', await call('POST', '/me/password', { current: 'admin123', next: 'owner-new-1' }, { token: b }));
+  const c = (await login('admin@salon.com', 'owner-new-1')).data.token;
   works('new password signs in', await call('GET', '/me', undefined, { token: c }));
-  const d = (await login('manager@salon.com', 'manager-new-1')).data.token;
-  works('password change keeps the current session', await call('POST', '/me/password', { current: 'manager-new-1', next: 'manager-new-2' }, { token: d }));
+  const d = (await login('admin@salon.com', 'owner-new-1')).data.token;
+  works('password change keeps the current session', await call('POST', '/me/password', { current: 'owner-new-1', next: 'admin123' }, { token: d }));
   refused('password change ends other sessions', await call('GET', '/me', undefined, { token: c }), 401);
-  const victim = (await login(`u${U}@x.com`, 'password123')).data?.token;
-  works('another login is signed in', await call('GET', '/me', undefined, { token: victim }));
-  works('owner switches that login off', await call('PUT', `/users/${nu}`, { name: `U ${U}`, email: `u${U}@x.com`, role: 'Manager', active: false }));
-  refused('switched-off login is cut off', await call('GET', '/me', undefined, { token: victim }), 401);
-  works('user delete', await call('DELETE', `/users/${nu}`));
 
   console.log('Other websites (CORS)');
   const okOrigin = await fetch(`${BASE}/customers`, { method: 'OPTIONS', headers: { Origin: 'https://allowed.example', 'Access-Control-Request-Method': 'GET' } });

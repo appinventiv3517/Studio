@@ -14,8 +14,9 @@ npm run setup             # creates the database with demo data
 npm run dev               # open http://localhost:3000
 ```
 
-Sign in with `admin@salon.com` / `admin123`. The demo data also has `manager@salon.com` / `manager123`
-and `reception@salon.com` / `reception123`. Change these passwords before real use (click your name in the menu).
+Sign in with `admin@salon.com` / `admin123`. Only the owner can sign in: logins with any other role
+(Manager, Receptionist, Stylist) are refused, and an existing session for one stops working. Change the password
+before real use (click your name in the menu).
 
 ### As a Mac app
 
@@ -53,7 +54,7 @@ Everything the app does goes through a REST API under `/api`: every change (new 
 The screens call it, and so can any other client. Pages load their data from the API's GET endpoints, and saves go to its POST, PUT and DELETE endpoints, so the database is only reached through the API. The code that does the work is in each feature's folder under `src/server/features/`;
 each URL is one `route.ts` file under `src/app/api/` (for example `src/app/api/customers/[id]/route.ts`).
 
-**Tests.** `npm run build`, then `npm run test:api`. It starts the app on a temporary database and runs about 100 checks of the API (every endpoint, role limits, sign-out, rate limit, CORS), then cleans up.
+**Tests.** `npm run build`, then `npm run test:api`. It starts the app on a temporary database and runs about 100 checks of the API (every endpoint, owner-only sign-in, sign-out, rate limit, CORS), then cleans up.
 
 **Sessions.** Signing in gives a token that lasts 12 hours. The browser keeps it in local storage and sends it with every API call; it also sets a login cookie so page loads work. When the 12 hours are up (or the browser no longer has the token), the app signs the person out. Pages and the sidebar ask `GET /api/me` who is signed in, so only the API looks users up in the database. Signing out ends that session on the server, so a copied token stops working at once; changing a password or switching a login off signs that person out everywhere. After 5 wrong passwords for an email (or 20 from one address) sign-in is blocked for 15 minutes.
 

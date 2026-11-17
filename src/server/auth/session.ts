@@ -90,9 +90,10 @@ export async function lookupUser(): Promise<SessionUser | null> {
   const t = readToken();
   if (!t) return null;
   await ensureSessionTable();
+  // Only the owner can use the app, so a session for any other role is treated as signed out.
   // The session must still exist: signing out, a password change or deleting the login all remove it.
   const session = await db.session.findUnique({ where: { id: t.sessionId }, include: { user: { select: { id: true, name: true, email: true, role: true, active: true } } } });
-  if (!session || session.userId !== t.userId || session.expiresAt <= new Date() || !session.user.active) return null;
+  if (!session || session.userId !== t.userId || session.expiresAt <= new Date() || !session.user.active || session.user.role !== 'Owner') return null;
   const { active: _a, ...user } = session.user;
   return user;
 }
