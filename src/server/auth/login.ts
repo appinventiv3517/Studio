@@ -104,7 +104,7 @@ export async function verifyCode(challenge: string, code: string) {
     const step = matchCode(c.x!, text);
     if (step === null) throw wrong();
     // Only the first finished setup counts, so two browsers cannot both claim the secret.
-    const saved = await db.user.updateMany({ where: { id: user.id, twoFactorSecret: null }, data: { twoFactorSecret: c.x!, twoFactorLastStep: step } });
+    const saved = await db.user.updateMany({ where: { id: user.id, OR: [{ twoFactorSecret: null }, { twoFactorSecret: { isSet: false } }] }, data: { twoFactorSecret: c.x!, twoFactorLastStep: step } });
     if (!saved.count) throw new ActionError('Two-factor sign-in is already set up. Enter your password again.', 400);
   } else {
     const step = user.twoFactorSecret ? matchCode(user.twoFactorSecret, text) : null;

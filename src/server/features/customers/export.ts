@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
     const q = sp.get('q')?.trim();
     const branch = sp.get('branch');
     const list = await db.customer.findMany({
-      where: { active: true, ...(branch && { branchId: branch }), ...(q && { OR: [{ name: { contains: q } }, { phone: { contains: q } }, { email: { contains: q } }] }) },
+      where: { active: true, ...(branch && { branchId: branch }), ...(q && { OR: [{ name: { contains: q, mode: 'insensitive' } }, { phone: { contains: q, mode: 'insensitive' } }, { email: { contains: q, mode: 'insensitive' } }] }) },
       orderBy: { name: 'asc' },
       include: { branch: { select: { name: true } }, preferredStaff: { select: { name: true } } },
     });

@@ -66,9 +66,9 @@ export async function createInvoice(input: InvoiceInput) {
       }
 
       if (d.appointmentId) {
-        const appt = await tx.appointment.findUnique({ where: { id: d.appointmentId }, include: { invoice: true } });
+        const appt = await tx.appointment.findUnique({ where: { id: d.appointmentId }, include: { invoices: { take: 1 } } });
         if (!appt) throw new ActionError('The linked appointment no longer exists.');
-        if (appt.invoice) throw new ActionError(`This appointment is already billed on ${appt.invoice.number}.`);
+        if (appt.invoices[0]) throw new ActionError(`This appointment is already billed on ${appt.invoices[0].number}.`);
         if (appt.customerId !== d.customerId) throw new ActionError('The client does not match the appointment.');
       }
 

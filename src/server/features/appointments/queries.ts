@@ -19,13 +19,17 @@ export const listAppointments = (q: Q) =>
     };
     return db.appointment.findMany({
       where, orderBy: [{ date: 'asc' }, { startTime: 'asc' }], take: 1000,
-      include: { branch: { select: { name: true } }, staff: { select: { name: true } }, customer: { select: { id: true, name: true, phone: true } }, services: true, invoice: { select: { id: true, number: true, status: true } } },
-    });
+      include: { branch: { select: { name: true } }, staff: { select: { name: true } }, customer: { select: { id: true, name: true, phone: true } }, services: true, invoices: { select: { id: true, number: true, status: true }, take: 1 } },
+    }).then((list) => list.map(oneInvoice));
   });
+
+/** An appointment has at most one live bill; screens read it as `invoice`. */
+type Bill = { id: string; number: string; status: string };
+const oneInvoice = <T extends { invoices: Bill[] }>({ invoices, ...a }: T) => ({ ...a, invoice: invoices[0] ?? (null as Bill | null) });
 
 export const getAppointment = (id: string) =>
   read('appointments', async () => {
-    const a = await db.appointment.findUnique({ where: { id }, include: { branch: true, staff: { select: { id: true, name: true } }, customer: { select: { id: true, name: true, phone: true } }, services: true, invoice: { select: { id: true, number: true, status: true } } } });
+    const a = await db.appointment.findUnique({ where: { id }, include: { branch: true, staff: { select: { id: true, name: true } }, customer: { select: { id: true, name: true, phone: true } }, services: true, invoices: { select: { id: true, number: true, status: true }, take: 1 } } });
     if (!a) throw new ActionError('Appointment not found.', 404);
-    return a;
+    return oneInvoice(a);
   });

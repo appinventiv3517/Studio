@@ -8,7 +8,8 @@ next-env.d.ts
 .env*.local
 .DS_Store
 
-# Local database (created by `npm run setup`)
+.next-check
+
+# Old local SQLite files (no longer used)
 prisma/*.db
 prisma/*.db-journal
-.next-check

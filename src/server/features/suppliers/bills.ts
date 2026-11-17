@@ -37,6 +37,8 @@ export async function saveBill(form: FormData) {
     const { id, paidNow, method, ...data } = billSchema.parse(text);
     if (data.dueDate && data.dueDate < data.date) throw new ActionError('The due date cannot be before the bill date.');
 
+    if (data.billNumber && (await db.supplierBill.findFirst({ where: { supplierId: data.supplierId, billNumber: data.billNumber, ...(id && { id: { not: id } }) }, select: { id: true } }))) throw new ActionError('That bill number is already in use.', 409);
+
     const upload = form.get('file');
     let file: { fileName: string; fileType: string; fileData: Buffer } | null = null;
     if (upload instanceof File && upload.size > 0) {

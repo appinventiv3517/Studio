@@ -54,10 +54,10 @@ const NEXT: Record<string, string[]> = {
 export async function setAppointmentStatus(id: string, status: string) {
   return attempt(async () => {
     await requireEdit('appointments');
-    const appt = await db.appointment.findUnique({ where: { id }, include: { invoice: { select: { status: true } } } });
+    const appt = await db.appointment.findUnique({ where: { id }, include: { invoices: { select: { status: true }, take: 1 } } });
     if (!appt) throw new ActionError('This appointment no longer exists.');
     if (!NEXT[appt.status]?.includes(status)) throw new ActionError('That change is not possible from the current status.');
-    if (appt.invoice && appt.invoice.status !== 'Cancelled') throw new ActionError('This appointment has been billed. Cancel the bill first to change it.');
+    if (appt.invoices[0] && appt.invoices[0].status !== 'Cancelled') throw new ActionError('This appointment has been billed. Cancel the bill first to change it.');
     if (status === 'Booked' && (appt.status === 'Cancelled' || appt.status === 'NoShow')) {
       await assertSlotFree({ staffId: appt.staffId, date: appt.date, start: appt.startTime, end: appt.endTime, ignoreId: id });
     }

@@ -1,16 +1,17 @@
 // End-to-end check of the API. Run `npm run build` first, then `npm run test:api`.
 // It makes its own database and server, so your real data is never touched.
+// It needs a MongoDB replica set: set TEST_DATABASE_URL to one without a database name, e.g.
+//   mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true   (a throwaway database is made inside it and dropped after)
 import { execSync, spawn, type ChildProcess } from 'child_process';
 import { createHmac } from 'crypto';
-import { mkdtempSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
 import { PrismaClient } from '@prisma/client';
-import { join } from 'path';
 
 const PORT = 3400 + Math.floor(Math.random() * 400);
 const BASE = `http://127.0.0.1:${PORT}/api`;
-const dir = mkdtempSync(join(tmpdir(), 'salon-api-test-'));
-const url = `file:${join(dir, 'test.db')}`;
+const base = process.env.TEST_DATABASE_URL;
+if (!base) throw new Error('Set TEST_DATABASE_URL to a MongoDB replica set (see the top of scripts/test-api.ts).');
+const dbName = `salon_test_${Date.now()}`;
+const url = base.replace(/\/(\?|$)/, `/${dbName}$1`);
 const env = { ...process.env, DATABASE_URL: url, SESSION_SECRET: 'test-secret-test-secret-123', ALLOWED_ORIGINS: 'https://allowed.example', NODE_ENV: 'production' } as NodeJS.ProcessEnv;
 
 let passed = 0;
@@ -129,6 +130,9 @@ async function run() {
   works('supplier switch on', await call('POST', `/suppliers/${su}/active`, { active: true }));
   const prod = { name: `Prod ${U}`, category: 'Hair', supplierId: su, costPrice: 100, price: 200, reorderLevel: 2, unit: 'pcs', openingStock: 10, openingBranchId: branch };
   works('product create', await call('POST', '/products', prod));
+  works('product with a sku', await call('POST', '/products', { ...prod, name: `Sku ${U}`, sku: `SKU-${U}` }));
+  refused('a repeated sku is refused', await call('POST', '/products', { ...prod, name: `Sku2 ${U}`, sku: `SKU-${U}` }), 409);
+  works('two products without a sku are fine', await call('POST', '/products', { ...prod, name: `NoSku ${U}` }));
   const pr = (await get('/products')).items.find((p: any) => p.name === `Prod ${U}`).id;
   works('product update', await call('PUT', `/products/${pr}`, { ...prod, price: 250, openingStock: undefined, openingBranchId: undefined }));
   works('stock in', await call('POST', '/stock/movements', { productId: pr, type: 'IN', qty: 5, branchId: branch, supplierId: su }));
@@ -152,6 +156,8 @@ async function run() {
   console.log('Supplier bills');
   works('bill create', await call('POST', '/supplier-bills', { supplierId: su, billNumber: 'B1', date, amount: 1000, paidNow: 200, method: 'Cash' }));
   const bill = (await get(`/suppliers/${su}`)).bills[0].id;
+  refused('a repeated bill number is refused', await call('POST', '/supplier-bills', { supplierId: su, billNumber: 'B1', date, amount: 50 }), 409);
+  refused('a made-up id is a 404, not a crash', await call('GET', '/customers/not-a-real-id'), 404);
   works('bill update', await call('PUT', `/supplier-bills/${bill}`, { supplierId: su, billNumber: 'B1', date, amount: 1200 }));
   const form = new FormData();
   form.set('supplierId', su); form.set('date', date); form.set('amount', '500');
@@ -248,13 +254,9 @@ async function run() {
 async function main() {
   let server: ChildProcess | undefined;
   try {
-    console.log(`Preparing a test database in ${dir}`);
+    console.log(`Preparing a test database (${dbName})`);
     execSync('npx prisma db push --skip-generate --accept-data-loss', { env, stdio: 'ignore' });
     execSync('npx tsx prisma/seed.ts', { env, stdio: 'ignore' });
-    // An older database (including an installed desktop app) has no Session table; the app must create it itself.
-    const old = new PrismaClient({ datasources: { db: { url } } });
-    await old.$executeRawUnsafe('DROP TABLE "Session"');
-    await old.$disconnect();
     server = spawn('npx', ['next', 'start', '-p', String(PORT)], { env, stdio: 'ignore' });
     for (let i = 0; ; i++) {
       try { if ((await fetch(`${BASE}/public/branding`)).ok) break; } catch { /* not up yet */ }
@@ -263,10 +265,10 @@ async function main() {
     }
     await run();
   } finally {
-    await testDb.$disconnect();
     server?.kill();
     try { execSync(`fuser -k ${PORT}/tcp`, { stdio: 'ignore' }); } catch { /* already stopped */ }
-    rmSync(dir, { recursive: true, force: true });
+    try { await testDb.$runCommandRaw({ dropDatabase: 1 }); } catch { /* nothing to drop */ }
+    await testDb.$disconnect();
   }
   console.log(`\n${passed} passed, ${failed.length} failed`);
   if (failed.length) { console.log('Failed:\n  ' + failed.join('\n  ')); process.exit(1); }

@@ -10,7 +10,7 @@ export const listProducts = (q: Q) =>
     const term = str(q, 'q');
     const branch = str(q, 'branch');
     const rows = await db.product.findMany({
-      where: { active: q.get('archived') === '1' ? false : true, ...(term && { OR: [{ name: { contains: term } }, { sku: { contains: term } }, { category: { contains: term } }] }) },
+      where: { active: q.get('archived') === '1' ? false : true, ...(term && { OR: [{ name: { contains: term, mode: 'insensitive' } }, { sku: { contains: term, mode: 'insensitive' } }, { category: { contains: term, mode: 'insensitive' } }] }) },
       orderBy: { name: 'asc' }, include: { supplierRef: { select: { name: true } } },
     });
     const shelves = await stockByBranch(rows.map((p) => p.id));

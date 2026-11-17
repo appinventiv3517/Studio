@@ -22,21 +22,8 @@ export const TOKEN_MAX_AGE = MAX_AGE;
 /** Signs a short-lived value, such as the step between password and code. `kind` stops it being mistaken for a session token. */
 export const signFor = (kind: string, data: string) => sign(`${kind}:${data}`);
 
-let tableReady: Promise<unknown> | null = null;
-/** Databases made before sessions existed (including installed desktop apps) get the table the first time it is needed. */
-function ensureSessionTable() {
-  tableReady ??= db
-    .$executeRawUnsafe(
-      'CREATE TABLE IF NOT EXISTS "Session" ("id" TEXT NOT NULL PRIMARY KEY, "userId" TEXT NOT NULL, "expiresAt" DATETIME NOT NULL, "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, CONSTRAINT "Session_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User" ("id") ON DELETE CASCADE ON UPDATE CASCADE)',
-    )
-    .then(() => db.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "Session_userId_idx" ON "Session"("userId")'))
-    .catch((e) => { tableReady = null; throw e; });
-  return tableReady;
-}
-
 /** Starts a session for this user and returns its signed token. The token is only good while its session row exists. */
 async function issueToken(userId: string) {
-  await ensureSessionTable();
   await db.session.deleteMany({ where: { expiresAt: { lt: new Date() } } });
   const expiresAt = new Date(Date.now() + MAX_AGE * 1000);
   const s = await db.session.create({ data: { userId, expiresAt } });
@@ -56,7 +43,6 @@ export async function startSession(userId: string) {
 export async function endSession() {
   const s = readToken();
   if (s) {
-    await ensureSessionTable();
     await db.session.deleteMany({ where: { id: s.sessionId } });
   }
   cookies().delete(COOKIE);
@@ -64,7 +50,6 @@ export async function endSession() {
 
 /** Cancels every session of a user except (optionally) the current one, e.g. after a password change. */
 export async function endOtherSessions(userId: string, keepSessionId?: string) {
-  await ensureSessionTable();
   await db.session.deleteMany({ where: { userId, ...(keepSessionId && { id: { not: keepSessionId } }) } });
 }
 
@@ -93,7 +78,6 @@ export type SessionUser = { id: string; name: string; email: string; role: strin
 export async function lookupUser(): Promise<SessionUser | null> {
   const t = readToken();
   if (!t) return null;
-  await ensureSessionTable();
   // Only the owner can use the app, so a session for any other role is treated as signed out.
   // The session must still exist: signing out, a password change or deleting the login all remove it.
   const session = await db.session.findUnique({ where: { id: t.sessionId }, include: { user: { select: { id: true, name: true, email: true, role: true, active: true } } } });

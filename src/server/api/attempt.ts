@@ -20,6 +20,8 @@ export async function attempt<T>(fn: () => Promise<T>): Promise<Result<T>> {
       const target = String((e.meta?.target as string[] | undefined)?.join(', ') ?? 'value');
       return { ok: false, error: `That ${label(target)} is already in use.`, status: 409 };
     }
+    // A made-up or mistyped id is not a valid MongoDB id; that just means nothing is there.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2023') return { ok: false, error: 'Not found.', status: 404 };
     console.error(e);
     return { ok: false, error: 'Something went wrong while saving. Try again.', status: 500 };
   }

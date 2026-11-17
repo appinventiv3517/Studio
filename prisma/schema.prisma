@@ -1,18 +1,16 @@
-// Salon Studio database. Money is stored in rupees, dates as "YYYY-MM-DD", times as "HH:mm".
+// Salon Studio database (MongoDB). Money is stored in rupees, dates as "YYYY-MM-DD", times as "HH:mm".
 
 generator client {
-  provider      = "prisma-client-js"
-  binaryTargets = ["native", "windows"]
-  previewFeatures = ["driverAdapters"]
+  provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "mongodb"
   url      = env("DATABASE_URL")
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
   name         String
   email        String   @unique
   passwordHash String
@@ -27,8 +25,8 @@ model User {
 
 // One row per signed-in browser or app. Signing out deletes it, which cancels that token straight away.
 model Session {
-  id        String   @id @default(cuid())
-  userId    String
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String @db.ObjectId
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   expiresAt DateTime
   createdAt DateTime @default(now())
@@ -38,7 +36,7 @@ model Session {
 
 // Single row (id = 1) holding the business profile.
 model Settings {
-  id             Int    @id @default(1)
+  id             Int    @id @default(1) @map("_id")
   name           String
   address        String @default("")
   phone          String @default("")
@@ -53,7 +51,7 @@ model Settings {
 }
 
 model Branch {
-  id           String        @id @default(cuid())
+  id           String        @id @default(auto()) @map("_id") @db.ObjectId
   name         String
   address      String        @default("")
   active       Boolean       @default(true)
@@ -65,7 +63,7 @@ model Branch {
 }
 
 model Customer {
-  id               String        @id @default(cuid())
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
   name             String
   phone            String        @unique
   email            String?
@@ -75,8 +73,8 @@ model Customer {
   notes            String?
   hairNotes        String?
   nailNotes        String?
-  preferredStaffId String?
-  branchId         String?
+  preferredStaffId String? @db.ObjectId
+  branchId         String? @db.ObjectId
   active           Boolean       @default(true)
   createdAt        DateTime      @default(now())
   preferredStaff   Staff?        @relation(fields: [preferredStaffId], references: [id])
@@ -88,7 +86,7 @@ model Customer {
 }
 
 model Staff {
-  id             String               @id @default(cuid())
+  id             String               @id @default(auto()) @map("_id") @db.ObjectId
   name           String
   phone          String               @unique
   email          String?
@@ -110,8 +108,8 @@ model Staff {
 
 // One row per staff member per day that was marked. No row means not marked yet.
 model Attendance {
-  id        String   @id @default(cuid())
-  staffId   String
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  staffId   String @db.ObjectId
   date      String
   present   Boolean  @default(true)
   remark    String? // e.g. left early, late out
@@ -123,17 +121,17 @@ model Attendance {
 }
 
 model ServiceCategory {
-  id        String    @id @default(cuid())
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
   name      String    @unique
   sortOrder Int       @default(0)
   services  Service[]
 }
 
 model Service {
-  id          String               @id @default(cuid())
+  id          String               @id @default(auto()) @map("_id") @db.ObjectId
   name        String
   description String?
-  categoryId  String
+  categoryId  String @db.ObjectId
   price       Float
   duration    Int // minutes
   active      Boolean              @default(true)
@@ -143,10 +141,10 @@ model Service {
 }
 
 model Appointment {
-  id        String               @id @default(cuid())
-  customerId String
-  staffId   String
-  branchId  String?
+  id        String               @id @default(auto()) @map("_id") @db.ObjectId
+  customerId String @db.ObjectId
+  staffId   String @db.ObjectId
+  branchId  String? @db.ObjectId
   date      String
   startTime String
   endTime   String
@@ -158,16 +156,16 @@ model Appointment {
   staff     Staff                @relation(fields: [staffId], references: [id])
   branch    Branch?              @relation(fields: [branchId], references: [id])
   services  AppointmentService[]
-  invoice   Invoice?
+  invoices  Invoice[] // at most one that is not cancelled (a cancelled bill lets go of its appointment)
 
   @@index([date])
   @@index([staffId, date])
 }
 
 model AppointmentService {
-  id            String      @id @default(cuid())
-  appointmentId String
-  serviceId     String
+  id            String      @id @default(auto()) @map("_id") @db.ObjectId
+  appointmentId String @db.ObjectId
+  serviceId     String @db.ObjectId
   name          String
   price         Float
   duration      Int
@@ -176,7 +174,7 @@ model AppointmentService {
 }
 
 model Supplier {
-  id        String          @id @default(cuid())
+  id        String          @id @default(auto()) @map("_id") @db.ObjectId
   name      String          @unique
   contact   String? // contact person
   phone     String?
@@ -193,8 +191,8 @@ model Supplier {
 
 // A bill received from a supplier for goods bought, and the payments made against it.
 model SupplierBill {
-  id         String            @id @default(cuid())
-  supplierId String
+  id         String            @id @default(auto()) @map("_id") @db.ObjectId
+  supplierId String @db.ObjectId
   billNumber String? // optional: the bill itself is the record
   date       String
   dueDate    String?
@@ -208,13 +206,13 @@ model SupplierBill {
   supplier   Supplier          @relation(fields: [supplierId], references: [id])
   payments   SupplierPayment[]
 
-  @@unique([supplierId, billNumber])
+  @@index([supplierId, billNumber])
   @@index([date])
 }
 
 model SupplierPayment {
-  id        String       @id @default(cuid())
-  billId    String
+  id        String       @id @default(auto()) @map("_id") @db.ObjectId
+  billId    String @db.ObjectId
   date      String
   amount    Float
   method    String // Cash | UPI | Card | Bank
@@ -224,11 +222,11 @@ model SupplierPayment {
 }
 
 model Product {
-  id           String          @id @default(cuid())
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
   name         String
-  sku          String?         @unique
+  sku          String?
   category     String          @default("General")
-  supplierId   String?
+  supplierId   String? @db.ObjectId
   costPrice    Float           @default(0)
   price        Float
   stock        Int             @default(0)
@@ -242,29 +240,29 @@ model Product {
 }
 
 model StockMovement {
-  id        String   @id @default(cuid())
-  productId String
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  productId String @db.ObjectId
   type      String // IN | OUT | ADJUST | SALE | RETURN | TRANSFER
   change    Int // signed
   balance   Int // that branch's count after this movement
   note      String?
-  invoiceId String?
-  supplierId String? // who the stock was received from (IN only)
+  invoiceId String? @db.ObjectId
+  supplierId String? @db.ObjectId // who the stock was received from (IN only)
   createdAt DateTime @default(now())
   product   Product  @relation(fields: [productId], references: [id])
   supplier  Supplier? @relation(fields: [supplierId], references: [id])
-  branchId  String? // which branch's shelf this moved
+  branchId  String? @db.ObjectId // which branch's shelf this moved
   branch    Branch?   @relation(fields: [branchId], references: [id])
 
   @@index([productId, createdAt])
 }
 
 model Invoice {
-  id            String        @id @default(cuid())
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
   number        String        @unique
-  customerId    String
-  appointmentId String?       @unique
-  branchId      String?
+  customerId    String @db.ObjectId
+  appointmentId String? @db.ObjectId
+  branchId      String? @db.ObjectId
   subtotal      Float
   discountType  String? // percent | amount
   discountValue Float         @default(0)
@@ -286,15 +284,16 @@ model Invoice {
 
   @@index([createdAt])
   @@index([customerId])
+  @@index([appointmentId])
 }
 
 model InvoiceItem {
-  id        String   @id @default(cuid())
-  invoiceId String
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceId String @db.ObjectId
   kind      String // service | product
-  serviceId String?
-  productId String?
-  staffId   String?
+  serviceId String? @db.ObjectId
+  productId String? @db.ObjectId
+  staffId   String? @db.ObjectId
   name      String
   qty       Int
   unitPrice Float
@@ -309,8 +308,8 @@ model InvoiceItem {
 }
 
 model Payment {
-  id        String   @id @default(cuid())
-  invoiceId String
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceId String @db.ObjectId
   amount    Float
   method    String // Cash | UPI | Card | Bank
   reference String?
@@ -322,8 +321,8 @@ model Payment {
 
 // Money handed back to a client for a bill. The bill's total and paid amounts stay as they were.
 model Refund {
-  id        String   @id @default(cuid())
-  invoiceId String
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  invoiceId String @db.ObjectId
   amount    Float
   method    String // Cash | UPI | Card | Bank
   reason    String
@@ -335,14 +334,14 @@ model Refund {
 }
 
 model Expense {
-  id          String   @id @default(cuid())
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
   date        String
   category    String
   description String
   amount      Float
   method      String   @default("Cash")
   vendor      String?
-  branchId    String?
+  branchId    String? @db.ObjectId
   createdAt   DateTime @default(now())
   branch      Branch?  @relation(fields: [branchId], references: [id])
 

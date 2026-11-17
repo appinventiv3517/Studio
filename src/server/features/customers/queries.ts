@@ -13,7 +13,7 @@ export const listCustomers = (q: Q) =>
     const visitedAppt = { status: { notIn: ['Cancelled', 'NoShow'] } };
     const where: Prisma.CustomerWhereInput = {
       active: q.get('archived') === '1' ? false : true,
-      ...(term && { OR: [{ name: { contains: term } }, { phone: { contains: term } }, { email: { contains: term } }] }),
+      ...(term && { OR: [{ name: { contains: term, mode: 'insensitive' } }, { phone: { contains: term, mode: 'insensitive' } }, { email: { contains: term, mode: 'insensitive' } }] }),
       ...(branch && { OR: [{ branchId: branch }, { appointments: { some: { branchId: branch, ...visitedAppt } } }, { invoices: { some: { branchId: branch, status: { not: 'Cancelled' } } } }] }),
     };
     const [total, list] = await Promise.all([

@@ -1,16 +1,21 @@
 # Salon Studio
 
 Appointments, billing, clients, stock and reports for **Shruti Pahwa Luxury Salon & Academy**.
-It runs as a Mac app or in a browser, and keeps all data in one local file that the salon owns.
+It is a website (Next.js) with a REST API, and keeps all data in MongoDB.
 
 ## Run it
 
-You need [Node.js 20 or newer](https://nodejs.org).
+You need [Node.js 20 or newer](https://nodejs.org) and a MongoDB **replica set** (bills and stock use transactions).
+The easy ways: a free [MongoDB Atlas](https://www.mongodb.com/atlas) cluster (always a replica set), or MongoDB in Docker:
+
+```bash
+docker compose up -d      # MongoDB on localhost:27017 (a one-node replica set)
+```
 
 ```bash
 npm install
-cp .env.example .env      # then put any long random text in SESSION_SECRET
-npm run setup             # creates the database with demo data
+cp .env.example .env      # set DATABASE_URL (Atlas string, or keep the Docker one) and any long random text in SESSION_SECRET
+npm run setup             # creates the collections and loads demo data
 npm run dev               # open http://localhost:3000
 ```
 
@@ -19,52 +24,29 @@ Sign in with `admin@salon.com` / `admin123`. Only the owner can sign in: logins 
 before real use (click your name in the menu).
 
 Every sign-in also needs a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…).
-The first time, the page shows a QR code to scan. Lost the phone? Run `npm run reset-2fa` on the computer that runs the app,
-then sign in again to set it up fresh.
-
-### As a Mac app
-
-```bash
-npm run desktop           # builds, then opens the app in its own window
-npm run dist:mac          # makes an installer (.dmg) in dist/, for Apple Silicon Macs
-```
-
-On first launch the app copies `prisma/dev.db` to `~/Library/Application Support/Salon Studio/salon.db`
-and uses that copy from then on. **Back up that file** to keep your records safe.
-To ship an installer without demo data, run `npm run setup:fresh` before `npm run dist:mac`. It prints a random owner password once; note it down. To choose your own, run it as `OWNER_PASSWORD=yourpassword npm run setup:fresh`.
-
-### As a Linux or Windows app
-
-```bash
-npm run dist:linux        # AppImage and .deb installers in dist/ (x64)
-npm run dist:win          # Windows installer (.exe) in dist/ (x64)
-```
-
-Linux: run the AppImage (`chmod +x` it first) or install the `.deb` with `sudo apt install ./dist/salon-studio_*.deb`.
-Data is kept in `~/.config/Salon Studio/salon.db` on Linux and `%APPDATA%\Salon Studio\salon.db` on Windows.
-`dist:win` is best run on Windows (building it from Linux needs Wine).
+The first time, the page shows a QR code to scan. Lost the phone? Run `npm run reset-2fa`, then sign in again to set it up fresh.
 
 ### Database commands
 
 | Command | What it does |
 |---|---|
-| `npm run setup` | Creates the database and loads demo data. If it already has data, it is left alone |
+| `npm run setup` | Creates the collections and loads demo data. If it already has data, it is left alone |
 | `npm run setup:demo` | Wipes everything and reloads demo data |
 | `npm run reset-2fa` | Turns two-factor sign-in off for the owner so it can be set up again (lost phone) |
 | `npm run setup:fresh` | Wipes everything and leaves only the owner login (with a random password, shown once), business details and service categories |
 
 ## Putting it online
 
-Website on Vercel, backend (the API) on Render, and the SQLite database on Railway. Step by step in [deploy/README.md](deploy/README.md).
-The website forwards `/api` to the backend (`API_URL`), and the backend reaches the database through `LIBSQL_URL`; with neither set, everything runs in one app on a local SQLite file as before.
+Website on Vercel, backend (the API) on Render, and the database on MongoDB Atlas. Step by step in [deploy/README.md](deploy/README.md).
+The website forwards `/api` to the backend (`API_URL`), and the backend reaches MongoDB through `DATABASE_URL`; with `API_URL` unset, everything runs in one app (local, or the Render backend).
 
 ## API
 
 Everything the app does goes through a REST API under `/api`: every change (new client, stock in, bill, payment) and every read.
-The screens call it, and so can any other client. Pages load their data from the API's GET endpoints, and saves go to its POST, PUT and DELETE endpoints, so the database is only reached through the API. The code that does the work is in each feature's folder under `src/server/features/`;
+The screens call it, and so can any other client. Pages load their data from the API's GET endpoints, and saves go to its POST, PUT and DELETE endpoints, so the database is only reached through the API. (MongoDB cannot keep an optional field unique, so repeated SKUs, supplier bill numbers and double-billing an appointment are refused by the service code instead.) The code that does the work is in each feature's folder under `src/server/features/`;
 each URL is one `route.ts` file under `src/app/api/` (for example `src/app/api/customers/[id]/route.ts`).
 
-**Tests.** `npm run build`, then `npm run test:api`. It starts the app on a temporary database and runs about 100 checks of the API (every endpoint, owner-only sign-in, sign-out, rate limit, CORS), then cleans up.
+**Tests.** `npm run build`, then `npm run test:api`. It starts the app on a temporary database (set `TEST_DATABASE_URL` to a MongoDB replica set, e.g. `mongodb://127.0.0.1:27017/?replicaSet=rs0&directConnection=true`) and runs about 130 checks of the API (every endpoint, owner-only sign-in, sign-out, rate limit, CORS), then cleans up.
 
 **Sessions.** Signing in gives a token that lasts 12 hours at most, but it only lives as long as the browser: the login cookie is a session cookie and the token sits in session storage, so closing the browser (or the tab, for the token) ends it and the next visit needs the password and a new authenticator code. The browser sends the token with every API call; the cookie makes page loads work. When the 12 hours are up (or the browser no longer has the token), the app signs the person out. Pages and the sidebar ask `GET /api/me` who is signed in, so only the API looks users up in the database. Signing out ends that session on the server, so a copied token stops working at once; changing a password or switching a login off signs that person out everywhere. Signing in also needs the authenticator code (see the top of this file). After 5 wrong passwords for an email (or 20 from one address) sign-in is blocked for 15 minutes.
 
@@ -130,7 +112,7 @@ https://claude.ai/artifact/3zV9pfZXf9B2itec12Hmoe
 
 It has the same screens and billing rules and saves everything in the page's own shared database, so there is
 nothing to install. People get access from the page's Share menu: Contributors and Editors can book and bill,
-Viewers can only look. Its records are separate from the desktop app's database.
+Viewers can only look. Its records are separate from the main app's database.
 
 ## What it does
 
@@ -168,7 +150,7 @@ Only the Owner or a Manager can cancel or refund a bill. Every save is checked o
 
 ## How it is built
 
-TypeScript, Next.js 14 (App Router), Prisma with SQLite, Tailwind CSS, and Electron for the desktop app.
+TypeScript, Next.js 14 (App Router), Prisma with MongoDB, and Tailwind CSS.
 
 ## Folder structure
 
@@ -176,12 +158,10 @@ TypeScript, Next.js 14 (App Router), Prisma with SQLite, Tailwind CSS, and Elect
 prisma/
   schema.prisma            database tables
   seed.ts                  demo and fresh-start data
-electron/                  desktop app shell (main.js starts server.js)
-deploy/                    live deployment guide (Vercel + Render + Railway) and the database Dockerfile
+deploy/                    live deployment guide (Vercel + Render + MongoDB Atlas)
 render.yaml                Render blueprint for the backend
+docker-compose.yml         local MongoDB (replica set) for development and tests
 scripts/
-  db-push-remote.ts        creates the tables on the live database (npm run db:push-remote)
-  make-db-key.ts           makes the live database's key and token (npm run db:make-key)
   test-api.ts              end-to-end API tests (npm run test:api)
   reset-2fa.ts             turns the owner's two-factor sign-in off (npm run reset-2fa)
   check-structure.ts       enforces the rules below (runs in npm run check)

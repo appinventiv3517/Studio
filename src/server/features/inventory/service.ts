@@ -37,6 +37,8 @@ export async function saveProduct(input: ProductInput) {
   return attempt(async () => {
     await requireEdit('inventory');
     const { id, openingStock, openingBranchId, ...data } = checkedProduct.parse(input);
+    // MongoDB cannot keep an optional field unique, so the SKU is checked here.
+    if (data.sku && (await db.product.findFirst({ where: { sku: data.sku, ...(id && { id: { not: id } }) }, select: { id: true } }))) throw new ActionError('That sku is already in use.', 409);
     if (id) {
       await db.product.update({ where: { id }, data });
     } else {
