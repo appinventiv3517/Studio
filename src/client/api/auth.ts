@@ -8,3 +8,8 @@ export type SignedIn = { token: string; expiresIn: number };
 
 export const signIn = (email: string, password: string) => call<SignInStep>('POST', '/auth/login', { email, password });
 export const verifyCode = (challenge: string, code: string) => call<SignedIn>('POST', '/auth/verify-otp', { challenge, code });
+
+// The account page: pair a new authenticator app while signed in (needs the current password).
+export type AuthenticatorSetup = { challenge: string; secret: string; qr: string };
+export const beginAuthenticator = (password: string) => call<AuthenticatorSetup>('POST', '/me/two-factor', { password });
+export const confirmAuthenticator = (challenge: string, code: string) => call('POST', '/me/two-factor/confirm', { challenge, code });

@@ -24,7 +24,7 @@ Sign in with `admin@salon.com` / `admin123`. Only the owner can sign in: logins 
 before real use (click your name in the menu).
 
 Every sign-in also needs a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…).
-The first time, the page shows a QR code to scan. Lost the phone? Run `npm run reset-2fa`, then sign in again to set it up fresh.
+The first time, the page shows a QR code to scan. A new phone can be paired any time from **My Account → Two-factor sign-in** (needs the current password; the old app keeps working until the new one's code is entered). Lost the phone? Run `npm run reset-2fa`, then sign in again to set it up fresh.
 
 ### Database commands
 
@@ -72,7 +72,7 @@ A code works once; 5 wrong codes block sign-in for 15 minutes. Other clients sen
 | Staff | `POST /staff`, `PUT /staff/:id`, `POST /staff/:id/archive` and `/restore` |
 | Suppliers | `POST /suppliers`, `PUT /suppliers/:id`, `POST /suppliers/:id/active`, `POST /supplier-bills` (form upload), `PUT` / `DELETE /supplier-bills/:id`, `POST /supplier-payments`, `DELETE /supplier-payments/:id` |
 | Expenses | `POST /expenses`, `PUT /expenses/:id`, `DELETE /expenses/:id` |
-| Settings | `PUT /settings`, `POST /branches`, `PUT` / `DELETE /branches/:id`, `POST /users`, `PUT` / `DELETE /users/:id`, `POST /me/password` |
+| Settings | `PUT /settings`, `POST /branches`, `PUT` / `DELETE /branches/:id`, `POST /users`, `PUT` / `DELETE /users/:id`, `POST /me/password`, `POST /me/two-factor` `{password}` (start pairing a new authenticator: returns a QR code), `POST /me/two-factor/confirm` `{challenge, code}` |
 
 ### Reading data (GET)
 
@@ -82,6 +82,7 @@ Lists accept `?q=` to search, `?limit=` (up to 500) and `?offset=`, plus the fil
 | Endpoint | Returns |
 |---|---|
 | `GET /me` | The signed-in user |
+| `GET /me/two-factor` | `{ enabled }`: whether the authenticator app is set up |
 | `GET /public/branding` | Salon name and address (no login needed; used on the sign-in page) |
 | `GET /alerts` | Counts behind the sidebar alerts |
 | `GET /dashboard` | Today's appointments, bills, money collected, new clients, low stock |

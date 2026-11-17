@@ -245,7 +245,24 @@ async function run() {
   const next = await call('POST', '/auth/login', { email: 'admin@salon.com', password: 'admin123' }, { token: null });
   check('next sign-in asks for a code, no QR', next.ok && next.data.step === 'verify' && !next.data.qr && !next.data.token, next.data);
   refused('a code cannot be used twice', await verify(next.data.challenge, totp(secret)), 401);
-  works('the next code works', await verify(next.data.challenge, totp(secret, 1)));
+  const signedIn = works('the next code works', await verify(next.data.challenge, totp(secret, 1)));
+
+  // Pairing a new authenticator from the account page. Placed before the lockout below, which blocks this person's codes.
+  console.log('Authenticator from the account page');
+  const me2 = signedIn?.token;
+  refused('two-factor status needs a login', await call('GET', '/me/two-factor', undefined, { token: null }), 401);
+  check('status says two-factor is on', (await call('GET', '/me/two-factor', undefined, { token: me2 })).data?.enabled === true);
+  refused('a wrong password shows no QR code', await call('POST', '/me/two-factor', { password: 'nope' }, { token: me2 }), 400);
+  const re = works('the right password gives a QR code and key', await call('POST', '/me/two-factor', { password: 'admin123' }, { token: me2 }));
+  check('QR code and key are returned', !!re && re.qr.startsWith('data:image/png') && /^[A-Z2-7]{32}$/.test(re.secret) && re.secret !== secret, re);
+  refused('a wrong code changes nothing', await call('POST', '/me/two-factor/confirm', { challenge: re.challenge, code: '000000' }, { token: me2 }), 401);
+  refused('a sign-in step cannot be used to pair', await call('POST', '/me/two-factor/confirm', { challenge: next.data.challenge, code: totp(re.secret) }, { token: me2 }), 400);
+  refused('a pairing step cannot sign in', await verify(re.challenge, totp(re.secret)), 400);
+  works('the right code from the new app is accepted', await call('POST', '/me/two-factor/confirm', { challenge: re.challenge, code: totp(re.secret) }, { token: me2 }));
+  works('the current session carries on', await call('GET', '/me', undefined, { token: me2 }));
+  const again = await call('POST', '/auth/login', { email: 'admin@salon.com', password: 'admin123' }, { token: null });
+  refused('the old authenticator no longer works', await verify(again.data.challenge, totp(secret, 1)), 401);
+  works('the new authenticator signs in', await verify(again.data.challenge, totp(re.secret, 1)));
   refused('letters are not a code', await verify(next.data.challenge, 'abcdef'), 401);
   for (let i = 0; i < 5; i++) await verify(next.data.challenge, '111111');
   refused('too many wrong codes are blocked', await verify(next.data.challenge, totp(secret, 1)), 429);

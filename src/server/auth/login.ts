@@ -4,7 +4,7 @@ import { timingSafeEqual } from 'crypto';
 import QRCode from 'qrcode';
 import { headers } from 'next/headers';
 import { db } from '@/server/db';
-import { ActionError, endSession, signFor, startSession, TOKEN_MAX_AGE } from './session';
+import { ActionError, endOtherSessions, endSession, lookupUser, readToken, signFor, startSession, TOKEN_MAX_AGE } from './session';
 import { matchCode, newSecret, otpauthUri } from './totp';
 
 // Wrong-password limits. Failures are counted per email and per address for 15 minutes; the counts live in memory,
@@ -33,7 +33,8 @@ function address() {
   return (h.get('x-forwarded-for')?.split(',')[0] ?? h.get('x-real-ip') ?? 'local').trim();
 }
 
-type Challenge = { u: string; k: 'verify' | 'setup'; x?: string; e: number };
+// 'rebind' is for pairing a new authenticator from the account page while signed in; it can never start a session.
+type Challenge = { u: string; k: 'verify' | 'setup' | 'rebind'; x?: string; e: number };
 
 /** Proof that the password was right, valid for five minutes. For first-time setup it also carries the new secret. */
 function makeChallenge(c: Challenge) {
@@ -49,7 +50,7 @@ function readChallenge(token: string): Challenge | null {
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
   try {
     const c = JSON.parse(Buffer.from(payload, 'base64url').toString()) as Challenge;
-    return typeof c.u === 'string' && (c.k === 'verify' || c.k === 'setup') && c.e > Date.now() ? c : null;
+    return typeof c.u === 'string' && (c.k === 'verify' || c.k === 'setup' || c.k === 'rebind') && c.e > Date.now() ? c : null;
   } catch {
     return null;
   }
@@ -88,7 +89,7 @@ export async function login(email: string, password: string) {
 /** Step two: checks the 6-digit code from the authenticator app, then starts the session. */
 export async function verifyCode(challenge: string, code: string) {
   const c = readChallenge(challenge);
-  if (!c) throw new ActionError('That sign-in has expired. Enter your password again.', 400);
+  if (!c || c.k === 'rebind') throw new ActionError('That sign-in has expired. Enter your password again.', 400);
   const text = code.trim();
   if (!text) throw new ActionError('Enter the code from your authenticator app.');
   const key = `o:${c.u}`;
@@ -121,4 +122,55 @@ export async function verifyCode(challenge: string, code: string) {
 
 export async function logout() {
   await endSession();
+}
+
+/** Whether two-factor sign-in is set up for the signed-in person. */
+export async function twoFactorStatus() {
+  const me = await lookupUser();
+  if (!me) throw new ActionError('Your session has ended. Sign in again.', 401);
+  const u = await db.user.findUniqueOrThrow({ where: { id: me.id }, select: { twoFactorSecret: true } });
+  return { enabled: !!u.twoFactorSecret };
+}
+
+/**
+ * From the account page: starts pairing a (new) authenticator app. Needs the current password, because a
+ * stolen session must not be able to swap the second factor. Returns a QR code and key; nothing changes until
+ * finishAuthenticatorSetup gets a right code.
+ */
+export async function beginAuthenticatorSetup(password: string) {
+  const me = await lookupUser();
+  if (!me) throw new ActionError('Your session has ended. Sign in again.', 401);
+  const key = `e:${me.email.toLowerCase()}`;
+  const wait = tally(key, MAX_PER_EMAIL);
+  if (wait) throw new ActionError(`Too many wrong attempts. Try again in ${wait} minute${wait > 1 ? 's' : ''}.`, 429);
+  const user = await db.user.findUniqueOrThrow({ where: { id: me.id } });
+  if (!password || !(await bcrypt.compare(password, user.passwordHash))) {
+    tally(key, MAX_PER_EMAIL, true);
+    throw new ActionError('Your current password is not right.', 400);
+  }
+  const secret = newSecret();
+  const issuer = (await db.settings.findUnique({ where: { id: 1 }, select: { name: true } }))?.name || 'Salon Studio';
+  const qr = await QRCode.toDataURL(otpauthUri(secret, user.email, issuer), { margin: 1, width: 220 });
+  return { challenge: makeChallenge({ u: user.id, k: 'rebind', x: secret, e: Date.now() + CHALLENGE_MS }), secret, qr };
+}
+
+/** Finishes pairing: a right code from the new app makes it the one used at sign-in. Other sessions are signed out. */
+export async function finishAuthenticatorSetup(challenge: string, code: string) {
+  const me = await lookupUser();
+  if (!me) throw new ActionError('Your session has ended. Sign in again.', 401);
+  const c = readChallenge(challenge);
+  if (!c || c.k !== 'rebind' || c.u !== me.id || !c.x) throw new ActionError('That setup has expired. Start again.', 400);
+  const text = code.trim();
+  if (!text) throw new ActionError('Enter the code from your authenticator app.');
+  const key = `o:${me.id}`;
+  const wait = tally(key, MAX_CODES);
+  if (wait) throw new ActionError(`Too many wrong codes. Try again in ${wait} minute${wait > 1 ? 's' : ''}.`, 429);
+  const step = matchCode(c.x, text);
+  if (step === null) {
+    tally(key, MAX_CODES, true);
+    throw new ActionError('That code is not right. Check the code in your app and try again.', 401);
+  }
+  failures.delete(key);
+  await db.user.update({ where: { id: me.id }, data: { twoFactorSecret: c.x, twoFactorLastStep: step } });
+  await endOtherSessions(me.id, readToken()?.sessionId);
 }
