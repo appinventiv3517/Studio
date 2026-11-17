@@ -19,8 +19,8 @@ Sign in with `admin@salon.com` / `admin123`. Only the owner can sign in: logins 
 before real use (click your name in the menu).
 
 Every sign-in also needs a 6-digit code from an authenticator app (Google Authenticator, Microsoft Authenticator, Authy…).
-The first time, the page shows a QR code to scan, then 8 one-time backup codes: save them. Lost the phone? Type a backup
-code in place of the 6 digits, or run `npm run reset-2fa` on the computer that runs the app and sign in again to set it up fresh.
+The first time, the page shows a QR code to scan. Lost the phone? Run `npm run reset-2fa` on the computer that runs the app,
+then sign in again to set it up fresh.
 
 ### As a Mac app
 
@@ -69,8 +69,8 @@ each URL is one `route.ts` file under `src/app/api/` (for example `src/app/api/c
 
 Signing in takes two calls. `POST /api/auth/login` (`{ "email", "password" }`) checks the password and returns `{ step, challenge }`
 (valid 5 minutes, no session yet). `step` is `verify`, or `setup` the first time, which also returns `secret` and a `qr` image.
-Then `POST /api/auth/verify-otp` (`{ "challenge", "code" }`, the 6-digit code or a backup code) sets the login cookie and returns a `token`
-(plus `backupCodes` once, after setup). A code works once; 5 wrong codes block sign-in for 15 minutes. Other clients send the token as `Authorization: Bearer <token>`. Replies are `{ "ok": true, "data": … }` or
+Then `POST /api/auth/verify-otp` (`{ "challenge", "code" }`, the 6-digit code) sets the login cookie and returns a `token`
+A code works once; 5 wrong codes block sign-in for 15 minutes. Other clients send the token as `Authorization: Bearer <token>`. Replies are `{ "ok": true, "data": … }` or
 `{ "ok": false, "error": "…" }` with status 401 (not signed in), 403 (role not allowed), 422 (invalid input),
 409 or 400 (duplicate, or a rule was broken).
 

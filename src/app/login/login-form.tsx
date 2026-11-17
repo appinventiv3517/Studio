@@ -5,12 +5,10 @@ import { signIn, verifyCode, type SignInStep, type SignedIn } from '@/client/api
 import { Button, Field, Input } from '@/components/ui';
 
 // Step 1: email and password. Step 2: the 6-digit code from the authenticator app (the first time, set the app up with a QR code).
-// After first-time setup, the backup codes are shown once.
 export function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [step, setStep] = useState<SignInStep | null>(null);
-  const [done, setDone] = useState<(SignedIn & { backupCodes: string[] }) | null>(null);
   const finish = (s: SignedIn) => { saveSession(s.token, s.expiresIn); window.location.assign('/dashboard'); };
 
   async function password(e: React.FormEvent<HTMLFormElement>) {
@@ -31,27 +29,12 @@ export function LoginForm() {
     setPending(true);
     setError(null);
     const res = await verifyCode(step.challenge, String(form.get('otp-code')));
-    if (res.ok && res.data) {
-      if (res.data.backupCodes) setDone({ ...res.data, backupCodes: res.data.backupCodes });
-      else return finish(res.data);
-    } else setError(res.ok ? 'Could not sign in. Try again.' : res.error);
+    if (res.ok && res.data) return finish(res.data);
+    setError(res.ok ? 'Could not sign in. Try again.' : res.error);
     setPending(false);
   }
 
   const errorBox = error && <p className="rounded-lg bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</p>;
-
-  if (done) {
-    return (
-      <div className="space-y-4">
-        <h3 className="text-[18px] font-bold">Save your backup codes</h3>
-        <p className="text-[13.5px] text-ink-soft">If you lose your phone, each of these codes lets you sign in once in place of the app code. They are shown only now, so write them down or store them somewhere safe.</p>
-        <ul className="grid grid-cols-2 gap-2 rounded-lg border border-line bg-canvas p-4 font-mono text-[14px]">
-          {done.backupCodes.map((c) => <li key={c}>{c}</li>)}
-        </ul>
-        <Button className="w-full" onClick={() => finish(done)}>I have saved them, continue</Button>
-      </div>
-    );
-  }
 
   if (step) {
     return (
@@ -73,10 +56,10 @@ export function LoginForm() {
         ) : (
           <>
             <h3 className="text-[18px] font-bold">Enter your code</h3>
-            <p className="text-[13.5px] text-ink-soft">Open your authenticator app and type the 6-digit code. Lost your phone? Type one of your backup codes instead.</p>
+            <p className="text-[13.5px] text-ink-soft">Open your authenticator app and type the 6-digit code. Lost your phone? Ask whoever runs the app to reset two-factor sign-in.</p>
           </>
         )}
-        <Field label="Code"><Input key={step.challenge} id="otp-code" name="otp-code" type="text" inputMode="text" autoComplete="off" data-lpignore="true" data-1p-ignore placeholder="123456" required autoFocus /></Field>
+        <Field label="Code"><Input key={step.challenge} id="otp-code" name="otp-code" type="text" inputMode="text" autoComplete="off" data-lpignore="true" data-1p-ignore placeholder="6-digit code" required autoFocus /></Field>
         {errorBox}
         <Button type="submit" disabled={pending} className="w-full">{pending ? 'Checking…' : step.step === 'setup' ? 'Turn on and sign in' : 'Verify and sign in'}</Button>
         <Button variant="ghost" className="w-full" onClick={() => { setStep(null); setError(null); }}>Back</Button>

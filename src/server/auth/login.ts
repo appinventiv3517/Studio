@@ -1,6 +1,6 @@
 import 'server-only';
 import bcrypt from 'bcryptjs';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { timingSafeEqual } from 'crypto';
 import QRCode from 'qrcode';
 import { headers } from 'next/headers';
 import { db } from '@/server/db';
@@ -85,9 +85,7 @@ export async function login(email: string, password: string) {
   return { step: 'setup' as const, challenge: makeChallenge({ u: user.id, k: 'setup', x: secret, e: expires }), secret, qr };
 }
 
-const normalizeBackup = (code: string) => code.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-/** Step two: checks the 6-digit code (or a backup code), then starts the session. After first-time setup it also returns the backup codes, once. */
+/** Step two: checks the 6-digit code from the authenticator app, then starts the session. */
 export async function verifyCode(challenge: string, code: string) {
   const c = readChallenge(challenge);
   if (!c) throw new ActionError('That sign-in has expired. Enter your password again.', 400);
@@ -100,38 +98,25 @@ export async function verifyCode(challenge: string, code: string) {
   const user = await db.user.findUnique({ where: { id: c.u } });
   if (!user || user.role !== 'Owner' || !user.active) throw new ActionError('This login cannot sign in.', 403);
   const wrong = () => { tally(key, MAX_CODES, true); return new ActionError('That code is not right. Check the code in your app and try again.', 401); };
-  let backupCodes: string[] | undefined;
 
   if (c.k === 'setup') {
     if (user.twoFactorSecret) throw new ActionError('Two-factor sign-in is already set up. Enter your password again.', 400);
     const step = matchCode(c.x!, text);
     if (step === null) throw wrong();
-    backupCodes = Array.from({ length: 8 }, () => { const h = randomBytes(5).toString('hex'); return `${h.slice(0, 5)}-${h.slice(5)}`; });
-    const hashes = await Promise.all(backupCodes.map((b) => bcrypt.hash(normalizeBackup(b), 10)));
     // Only the first finished setup counts, so two browsers cannot both claim the secret.
-    const saved = await db.user.updateMany({ where: { id: user.id, twoFactorSecret: null }, data: { twoFactorSecret: c.x!, twoFactorLastStep: step, backupCodes: JSON.stringify(hashes) } });
+    const saved = await db.user.updateMany({ where: { id: user.id, twoFactorSecret: null }, data: { twoFactorSecret: c.x!, twoFactorLastStep: step } });
     if (!saved.count) throw new ActionError('Two-factor sign-in is already set up. Enter your password again.', 400);
-  } else if (/^\d{6}$/.test(text)) {
+  } else {
     const step = user.twoFactorSecret ? matchCode(user.twoFactorSecret, text) : null;
     if (step === null) throw wrong();
     // A code works once: the step must be newer than the last one accepted.
     const used = await db.user.updateMany({ where: { id: user.id, twoFactorLastStep: { lt: step } }, data: { twoFactorLastStep: step } });
     if (!used.count) throw wrong();
-  } else {
-    // Not six digits, so it can only be a backup code. Each one works once.
-    const hashes = JSON.parse(user.backupCodes) as string[];
-    const given = normalizeBackup(text);
-    let hit = -1;
-    for (let i = 0; i < hashes.length && hit < 0; i++) if (await bcrypt.compare(given, hashes[i])) hit = i;
-    if (hit < 0) throw wrong();
-    const left = hashes.filter((_, i) => i !== hit);
-    const used = await db.user.updateMany({ where: { id: user.id, backupCodes: user.backupCodes }, data: { backupCodes: JSON.stringify(left) } });
-    if (!used.count) throw wrong();
   }
 
   failures.delete(key);
   const token = await startSession(user.id);
-  return { token, expiresIn: TOKEN_MAX_AGE, user: { id: user.id, name: user.name, email: user.email, role: user.role }, ...(backupCodes && { backupCodes }) };
+  return { token, expiresIn: TOKEN_MAX_AGE, user: { id: user.id, name: user.name, email: user.email, role: user.role } };
 }
 
 export async function logout() {

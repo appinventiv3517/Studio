@@ -227,18 +227,15 @@ async function run() {
   refused('tampered sign-in step is refused', await verify(first.data.challenge.slice(0, -3) + 'abc', totp(first.data.secret)), 400);
   const secret: string = first.data.secret;
   const setup = works('right code finishes setup and signs in', await verify(first.data.challenge, totp(secret)));
-  check('eight backup codes are given', setup?.backupCodes?.length === 8);
   works('the new session works', await call('GET', '/me', undefined, { token: setup?.token }));
   refused('setup cannot run twice', await verify(first.data.challenge, totp(secret, 1)), 400);
   const next = await call('POST', '/auth/login', { email: 'admin@salon.com', password: 'admin123' }, { token: null });
   check('next sign-in asks for a code, no QR', next.ok && next.data.step === 'verify' && !next.data.qr && !next.data.token, next.data);
   refused('a code cannot be used twice', await verify(next.data.challenge, totp(secret)), 401);
   works('the next code works', await verify(next.data.challenge, totp(secret, 1)));
-  works('a backup code signs in', await verify(next.data.challenge, setup.backupCodes[0]));
-  refused('a backup code works only once', await verify(next.data.challenge, setup.backupCodes[0]), 401);
   refused('letters are not a code', await verify(next.data.challenge, 'abcdef'), 401);
   for (let i = 0; i < 5; i++) await verify(next.data.challenge, '111111');
-  refused('too many wrong codes are blocked', await verify(next.data.challenge, setup.backupCodes[1]), 429);
+  refused('too many wrong codes are blocked', await verify(next.data.challenge, totp(secret, 1)), 429);
 }
 
 async function main() {
