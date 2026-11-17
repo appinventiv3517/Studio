@@ -26,8 +26,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
     api<DataOf<typeof listAttendance>>('/attendance', { from, to }),
   ]);
   const rows: Row[] = staff.map((s) => ({
-    id: s.id, name: s.name, title: s.title, workDays: s.workDays.split(',').map(Number), startTime: s.startTime, endTime: s.endTime,
-    records: records.filter((r) => r.staffId === s.id).map((r) => ({ date: r.date, checkIn: r.checkIn, checkOut: r.checkOut })),
+    id: s.id, name: s.name, title: s.title,
+    records: records.filter((r) => r.staffId === s.id).map((r) => ({ date: r.date, present: r.present })),
   }));
 
   return (
@@ -36,7 +36,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
         title="Staff Attendance"
         subtitle={view === 'month' ? fmtDate(from, { month: 'long', year: 'numeric' }) : `${fmtDate(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][dayOfWeek(date)]}`}
       />
-      <AttendanceView view={view} date={date} month={month} today={today} nowMinutes={now.getHours() * 60 + now.getMinutes()} rows={rows} editable={canEdit(user.role, 'attendance')} />
+      <AttendanceView view={view} date={date} month={month} today={today} rows={rows} editable={canEdit(user.role, 'attendance')} />
     </>
   );
 }

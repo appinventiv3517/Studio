@@ -85,9 +85,11 @@ async function run() {
   refused('impossible status change is refused', await call('POST', `/appointments/${ap}/status`, { status: 'Completed' }), 400);
 
   console.log('Attendance');
-  works('punch in', await call('POST', '/attendance/punch-in', { staffId: st, date, time: '09:05' }));
-  works('punch out', await call('POST', '/attendance/punch-out', { staffId: st, date, time: '18:00' }));
-  works('attendance edit', await call('PUT', '/attendance', { staffId: st, date, checkIn: '09:10', checkOut: '18:10' }));
+  works('mark present', await call('PUT', '/attendance', { staffId: st, date, present: true }));
+  works('mark absent (changes the answer)', await call('PUT', '/attendance', { staffId: st, date, present: false }));
+  const marked = (await get(`/attendance?date=${date}&staffId=${st}`)) as any[];
+  check('attendance has one record for the day', marked.length === 1 && marked[0].present === false);
+  refused('future date is refused', await call('PUT', '/attendance', { staffId: st, date: later, present: true }), 400);
 
   console.log('Suppliers, products and stock');
   works('supplier create', await call('POST', '/suppliers', { name: `Sup ${U}`, phone: '9555555555', email: '' }));

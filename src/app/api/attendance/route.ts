@@ -5,4 +5,4 @@ import * as attendanceReads from '@/server/features/attendance/queries';
 export const dynamic = 'force-dynamic';
 
 export const GET = route(({ q }) => attendanceReads.listAttendance(q));
-export const PUT = route(({ b }) => attendance.saveTimes(b));
+export const PUT = route(({ b }) => attendance.markAttendance(b));

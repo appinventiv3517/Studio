@@ -70,7 +70,7 @@ other clients send it as `Authorization: Bearer <token>`. Replies are `{ "ok": t
 |---|---|
 | Clients | `POST /customers`, `PUT /customers/:id`, `DELETE /customers/:id` (archive), `POST /customers/import` `{csv}` |
 | Appointments | `POST /appointments`, `PUT /appointments/:id` (reschedule), `POST /appointments/:id/status` |
-| Attendance | `POST /attendance/punch-in`, `POST /attendance/punch-out`, `PUT /attendance` |
+| Attendance | `PUT /attendance` (`{ staffId, date, present }`) |
 | Bills | `POST /invoices`, `POST /invoices/:id/payments`, `/cancel`, `/refunds` |
 | Stock | `POST /products`, `PUT /products/:id`, `POST /products/:id/archive`, `DELETE /products/:id`, `GET /products/:id/history`, `POST /stock/movements`, `POST /stock/transfers` |
 | Services | `POST /services`, `PUT /services/:id`, `POST /services/:id/archive` and `/restore`, `POST /service-categories` |
@@ -97,7 +97,7 @@ Lists accept `?q=` to search, `?limit=` (up to 500) and `?offset=`, plus the fil
 | `GET /customers/export?q=&branch=&template=1` | CSV download |
 | `GET /appointments?date=` or `?from=&to=` or `?view=week&date=`, `&staffId=&branch=&customerId=&status=` | Appointments with services |
 | `GET /appointments/:id` | One appointment |
-| `GET /attendance?date=` or `?month=YYYY-MM` or `?from=&to=`, `&staffId=` | Punch records |
+| `GET /attendance?date=` or `?month=YYYY-MM` or `?from=&to=`, `&staffId=` | Attendance records (`present` true or false) |
 | `GET /invoices?q=&status=&branch=&customerId=&from=&to=` | Bills, with billed and collected totals |
 | `GET /invoices/:id` | One bill with items, payments and refunds |
 | `GET /products?q=&branch=&low=1&archived=1`, `GET /products/:id` | Products with stock per branch and stock value |
@@ -130,9 +130,9 @@ Viewers can only look. Its records are separate from the desktop app's database.
   Untick **Charge GST** to make a bill without GST. A new client can be added right on the bill screen.
   You can collect dues later and cancel a bill with a reason (optionally refunding what was paid), or refund money on a bill. Bills print or save as PDF from the bill page.
 - **Clients**: profiles with hair and nail notes, preferred stylist, visit history, total billed and balance due.
-- **Staff Attendance**: punch in and punch out times only. Press Punch in / Punch out to record the current time, or Edit times to
-  enter or correct them. A working day with no punch-in is Absent (today, once the shift is over). A month grid shows
-  days present, days absent and hours per person. Owners, Managers and Receptionists can use it.
+- **Staff Attendance**: mark each staff member Present or Absent for a day (today or earlier), and change it any time.
+  People you have not marked show as Not marked. A month grid shows each person's days present and absent.
+  Owners, Managers and Receptionists can use it.
 - **Suppliers**: vendor contacts (phone, email, GSTIN, address) and the bills you get from them: upload the bill (PDF or photo) with its amount, record payments against it, and see what is due or overdue. Link each product to a supplier, pick who stock was received from, and see
   deliveries per supplier and in the monthly stock list. Owners and Managers only.
 - **Services, Staff, Inventory, Expenses**: the service menu, team hours and pay (a fixed monthly salary or a commission %), stock counted per branch (with transfers between branches), expenses by branch, stock
