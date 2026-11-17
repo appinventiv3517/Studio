@@ -47,7 +47,8 @@ async function issueToken(userId: string) {
 /** Signs in: creates the session, sets the login cookie, and returns the token for API clients. */
 export async function startSession(userId: string) {
   const token = await issueToken(userId);
-  cookies().set(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: '/', maxAge: MAX_AGE });
+  // No maxAge: a session cookie, which the browser drops when it is closed, so the next visit asks for a new code.
+  cookies().set(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: '/' });
   return token;
 }
 

@@ -227,6 +227,13 @@ async function run() {
   refused('tampered sign-in step is refused', await verify(first.data.challenge.slice(0, -3) + 'abc', totp(first.data.secret)), 400);
   const secret: string = first.data.secret;
   const setup = works('right code finishes setup and signs in', await verify(first.data.challenge, totp(secret)));
+  const cookie = (await fetch(`${BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@salon.com', password: 'admin123' }) })).headers.get('set-cookie');
+  check('password step sets no login cookie', !cookie);
+  const next0 = await call('POST', '/auth/login', { email: 'admin@salon.com', password: 'admin123' }, { token: null });
+  await testDb.user.updateMany({ data: { twoFactorLastStep: 0 } });
+  const codeRes = await fetch(`${BASE}/auth/verify-otp`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ challenge: next0.data.challenge, code: totp(secret) }) });
+  const sc = codeRes.headers.get('set-cookie') ?? '';
+  check('login cookie ends when the browser closes (no expiry)', codeRes.ok && sc.startsWith('salon_session=') && !/max-age|expires/i.test(sc), sc.slice(0, 80));
   works('the new session works', await call('GET', '/me', undefined, { token: setup?.token }));
   refused('setup cannot run twice', await verify(first.data.challenge, totp(secret, 1)), 400);
   const next = await call('POST', '/auth/login', { email: 'admin@salon.com', password: 'admin123' }, { token: null });

@@ -1,12 +1,13 @@
 'use client';
-// The signed-in session as the browser keeps it: a token and the time it stops working (12 hours after sign-in).
+// The signed-in session as the browser keeps it: a token and the time it stops working (12 hours after sign-in at most).
+// It lives in sessionStorage, so closing the tab or browser ends it and the next visit needs the password and a new code.
 const KEY = 'salon_session';
 
 type Stored = { token: string; expiresAt: number };
 
 export function saveSession(token: string, expiresInSeconds: number) {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ token, expiresAt: Date.now() + expiresInSeconds * 1000 } satisfies Stored));
+    sessionStorage.setItem(KEY, JSON.stringify({ token, expiresAt: Date.now() + expiresInSeconds * 1000 } satisfies Stored));
   } catch {
     /* Storage can be blocked; the page then asks the person to sign in again. */
   }
@@ -14,7 +15,7 @@ export function saveSession(token: string, expiresInSeconds: number) {
 
 export function clearSession() {
   try {
-    localStorage.removeItem(KEY);
+    sessionStorage.removeItem(KEY);
   } catch {
     /* nothing to clear */
   }
@@ -23,11 +24,11 @@ export function clearSession() {
 /** The stored session, or null when there is none or its 12 hours are up (an expired one is removed). */
 export function readSession(): Stored | null {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = sessionStorage.getItem(KEY);
     if (!raw) return null;
     const s = JSON.parse(raw) as Stored;
     if (typeof s.token !== 'string' || typeof s.expiresAt !== 'number' || s.expiresAt <= Date.now()) {
-      localStorage.removeItem(KEY);
+      sessionStorage.removeItem(KEY);
       return null;
     }
     return s;
