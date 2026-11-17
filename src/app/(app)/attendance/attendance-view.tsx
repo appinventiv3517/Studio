@@ -8,7 +8,7 @@ import { useAction } from '@/client/use-action';
 import { addDays, dayOfWeek, DAY_NAMES, monthEnd } from '@/lib/format';
 import { markAttendance } from '@/client/api/attendance';
 
-type Rec = { date: string; present: boolean };
+type Rec = { date: string; present: boolean; remark: string | null };
 export type Row = { id: string; name: string; title: string; records: Rec[] };
 
 type Props = { view: 'day' | 'month'; date: string; month: string; today: string; rows: Row[]; editable: boolean };
@@ -56,12 +56,17 @@ function Daily({ date, today, rows, editable }: Props) {
       <Card pad={false}>
         <div className="overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Staff</th><th>Status</th>{canMark && <th />}</tr></thead>
+            <thead><tr><th>Staff</th><th>Status</th><th>Remark</th>{canMark && <th />}</tr></thead>
             <tbody>
               {items.map(({ r, rec }) => (
                 <tr key={r.id} className="hover:bg-canvas/60">
                   <td><div className="font-medium">{r.name}</div><div className="text-[12px] text-ink-mute">{r.title}</div></td>
                   <td>{rec ? <Badge tone={rec.present ? 'green' : 'red'}>{rec.present ? 'Present' : 'Absent'}</Badge> : <Badge tone="gray">Not marked</Badge>}</td>
+                  <td className="min-w-[220px]">
+                    {canMark && rec
+                      ? <RemarkInput key={`${r.id}${date}${rec.remark ?? ''}`} initial={rec.remark ?? ''} disabled={pending} onSave={(remark) => run(() => markAttendance({ staffId: r.id, date, remark }), 'Remark saved')} />
+                      : <span className="text-ink-soft">{rec?.remark || '—'}</span>}
+                  </td>
                   {canMark && (
                     <td className="whitespace-nowrap text-right">
                       <Button size="sm" variant={rec?.present ? 'primary' : 'secondary'} disabled={pending} onClick={() => mark(r, true)}><Check size={14} />Present</Button>{' '}
@@ -79,6 +84,16 @@ function Daily({ date, today, rows, editable }: Props) {
   );
 }
 
+/** Free-text remark. Saves when you leave the box or press Enter. */
+function RemarkInput({ initial, disabled, onSave }: { initial: string; disabled: boolean; onSave: (remark: string) => void }) {
+  const [value, setValue] = useState(initial);
+  const save = () => { if (value.trim() !== initial) onSave(value.trim()); };
+  return (
+    <Input value={value} maxLength={200} placeholder="Add remark" disabled={disabled} aria-label="Remark"
+        onChange={(e) => setValue(e.target.value)} onBlur={save} onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()} />
+  );
+}
+
 function Monthly({ month, today, rows }: Props) {
   const router = useRouter();
   const from = `${month}-01`;
@@ -91,7 +106,8 @@ function Monthly({ month, today, rows }: Props) {
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <Input type="month" value={month} onChange={(e) => e.target.value && router.push(`/attendance?view=month&month=${e.target.value}`)} className="w-auto" aria-label="Month" />
         <div className="ml-auto flex flex-wrap gap-3 text-[12.5px] text-ink-soft">
-          {[['P', 'Present'], ['A', 'Absent'], ['–', 'Not marked']].map(([l, t]) => <span key={l} className="inline-flex items-center gap-1.5"><span className={cx('inline-flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold', cell(l === 'P' ? { date: '', present: true } : l === 'A' ? { date: '', present: false } : undefined)[1])}>{l}</span>{t}</span>)}
+          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber-500" />Has a remark</span>
+          {[['P', 'Present'], ['A', 'Absent'], ['–', 'Not marked']].map(([l, t]) => <span key={l} className="inline-flex items-center gap-1.5"><span className={cx('inline-flex h-5 w-5 items-center justify-center rounded text-[11px] font-bold', cell(l === 'P' ? { date: '', present: true, remark: null } : l === 'A' ? { date: '', present: false, remark: null } : undefined)[1])}>{l}</span>{t}</span>)}
         </div>
       </div>
       <Card pad={false}>
@@ -118,7 +134,7 @@ function Monthly({ month, today, rows }: Props) {
                     <td className="sticky left-0 z-10 bg-white px-4 py-3"><div className="font-medium">{r.name}</div><div className="text-[11.5px] text-ink-mute">{r.title}</div></td>
                     {days.map((d) => {
                       const [letter, tone] = cell(by.get(d));
-                      return <td key={d} className="px-0.5 py-2 text-center"><span className={cx('inline-flex h-6 w-6 items-center justify-center rounded text-[11px] font-bold', tone)}>{letter}</span></td>;
+                      return <td key={d} className="px-0.5 py-2 text-center" title={by.get(d)?.remark ? `${d}: ${by.get(d)!.remark}` : undefined}><span className={cx('relative inline-flex h-6 w-6 items-center justify-center rounded text-[11px] font-bold', tone)}>{letter}{by.get(d)?.remark && <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />}</span></td>;
                     })}
                     <td className="tabular px-3 py-3 text-right font-semibold">{present}</td>
                     <td className={cx('tabular px-3 py-3 text-right font-semibold', absent > 0 && 'text-rose-600')}>{absent}</td>
@@ -153,11 +169,12 @@ function MonthCalendar({ from, days, today, rows }: { from: string; days: string
         {days.map((d) => {
           const rec = by.get(d);
           return (
-            <Link key={d} href={`/attendance?date=${d}`} className={cx('flex h-16 flex-col items-center justify-center rounded-lg border text-[13px] hover:border-violet-400',
+            <Link key={d} href={`/attendance?date=${d}`} title={rec?.remark ?? undefined} className={cx('flex h-16 flex-col items-center justify-center rounded-lg border text-[13px] hover:border-violet-400',
               rec ? (rec.present ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700') : 'border-line text-ink-soft',
               d === today && 'ring-2 ring-violet-500')}>
               <span className="tabular font-semibold">{Number(d.slice(8))}</span>
               <span className="text-[11px] font-medium">{rec ? (rec.present ? 'Present' : 'Absent') : '–'}</span>
+              {rec?.remark && <span className="mt-0.5 w-full truncate px-1 text-[10px] text-amber-700">{rec.remark}</span>}
             </Link>
           );
         })}

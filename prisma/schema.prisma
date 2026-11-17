@@ -110,6 +110,7 @@ model Attendance {
   staffId   String
   date      String
   present   Boolean  @default(true)
+  remark    String? // e.g. left early, late out
   createdAt DateTime @default(now())
   staff     Staff    @relation(fields: [staffId], references: [id])
 

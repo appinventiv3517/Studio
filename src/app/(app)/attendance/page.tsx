@@ -27,7 +27,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: {
   ]);
   const rows: Row[] = staff.map((s) => ({
     id: s.id, name: s.name, title: s.title,
-    records: records.filter((r) => r.staffId === s.id).map((r) => ({ date: r.date, present: r.present })),
+    records: records.filter((r) => r.staffId === s.id).map((r) => ({ date: r.date, present: r.present, remark: r.remark })),
   }));
 
   return (

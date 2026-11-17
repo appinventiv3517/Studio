@@ -89,6 +89,11 @@ async function run() {
   works('mark absent (changes the answer)', await call('PUT', '/attendance', { staffId: st, date, present: false }));
   const marked = (await get(`/attendance?date=${date}&staffId=${st}`)) as any[];
   check('attendance has one record for the day', marked.length === 1 && marked[0].present === false);
+  works('add remark', await call('PUT', '/attendance', { staffId: st, date, remark: 'Left early' }));
+  const withRemark = (await get(`/attendance?date=${date}&staffId=${st}`)) as any[];
+  check('remark is saved and the status is kept', withRemark[0]?.remark === 'Left early' && withRemark[0]?.present === false);
+  works('clear remark', await call('PUT', '/attendance', { staffId: st, date, remark: '' }));
+  refused('remark needs a marked day first', await call('PUT', '/attendance', { staffId: st, date: new Date(Date.now() - 86400000).toISOString().slice(0, 10), remark: 'x' }), 400);
   refused('future date is refused', await call('PUT', '/attendance', { staffId: st, date: later, present: true }), 400);
 
   console.log('Suppliers, products and stock');
