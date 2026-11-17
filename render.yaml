@@ -1,0 +1,22 @@
+# Backend on Render (Blueprint). The same build serves the API; the website on Vercel forwards /api here.
+services:
+  - type: web
+    name: salon-studio-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/public/branding
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: DATABASE_URL # only satisfies Prisma; the real database is LIBSQL_URL
+        value: file:./unused.db
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: LIBSQL_URL # e.g. https://your-db.up.railway.app
+        sync: false
+      - key: LIBSQL_AUTH_TOKEN
+        sync: false
+      - key: SITE_URL # the Vercel address, e.g. https://salon-studio.vercel.app
+        sync: false

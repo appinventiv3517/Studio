@@ -53,6 +53,11 @@ Data is kept in `~/.config/Salon Studio/salon.db` on Linux and `%APPDATA%\Salon 
 | `npm run reset-2fa` | Turns two-factor sign-in off for the owner so it can be set up again (lost phone) |
 | `npm run setup:fresh` | Wipes everything and leaves only the owner login (with a random password, shown once), business details and service categories |
 
+## Putting it online
+
+Website on Vercel, backend (the API) on Render, and the SQLite database on Railway. Step by step in [deploy/README.md](deploy/README.md).
+The website forwards `/api` to the backend (`API_URL`), and the backend reaches the database through `LIBSQL_URL`; with neither set, everything runs in one app on a local SQLite file as before.
+
 ## API
 
 Everything the app does goes through a REST API under `/api`: every change (new client, stock in, bill, payment) and every read.
@@ -172,7 +177,11 @@ prisma/
   schema.prisma            database tables
   seed.ts                  demo and fresh-start data
 electron/                  desktop app shell (main.js starts server.js)
+deploy/                    live deployment guide (Vercel + Render + Railway) and the database Dockerfile
+render.yaml                Render blueprint for the backend
 scripts/
+  db-push-remote.ts        creates the tables on the live database (npm run db:push-remote)
+  make-db-key.ts           makes the live database's key and token (npm run db:make-key)
   test-api.ts              end-to-end API tests (npm run test:api)
   reset-2fa.ts             turns the owner's two-factor sign-in off (npm run reset-2fa)
   check-structure.ts       enforces the rules below (runs in npm run check)

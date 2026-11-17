@@ -2,13 +2,12 @@
 // with only the owner login, business settings and service categories.
 // It refuses to touch a database that already has logins unless `--reset` is given.
 
-import { PrismaClient } from '@prisma/client';
+import { db } from '@/server/db';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'crypto';
 import { computeBill, invoiceStatus } from '@/lib/billing';
 import { addDays, fromMinutes, isoDate, toMinutes } from '@/lib/format';
 
-const db = new PrismaClient();
 const EMPTY = process.argv.includes('--empty');
 const RESET = process.argv.includes('--reset');
 const today = isoDate();

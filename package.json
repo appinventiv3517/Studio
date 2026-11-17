@@ -17,10 +17,14 @@
     "desktop": "npm run build && electron .",
     "dist:mac": "npm run build && electron-builder --mac dmg --arm64",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb --x64",
-    "dist:win": "npm run build && electron-builder --win nsis --x64"
+    "dist:win": "npm run build && electron-builder --win nsis --x64",
+    "db:push-remote": "tsx scripts/db-push-remote.ts",
+    "db:make-key": "tsx scripts/make-db-key.ts"
   },
   "dependencies": {
     "@fontsource/plus-jakarta-sans": "5.2.8",
+    "@libsql/client": "0.8.1",
+    "@prisma/adapter-libsql": "5.22.0",
     "@prisma/client": "5.22.0",
     "bcryptjs": "2.4.3",
     "html-to-image": "1.11.11",

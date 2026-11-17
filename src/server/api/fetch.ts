@@ -6,8 +6,9 @@ import { notFound, redirect } from 'next/navigation';
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const revive = (_: string, v: unknown) => (typeof v === 'string' && ISO.test(v) ? new Date(v) : v);
 
-/** Where this request came from, so the page can call its own API. */
+/** Where the API is: API_URL when it runs on another server (the live site), otherwise this same app. */
 function origin() {
+  if (process.env.API_URL) return process.env.API_URL.replace(/\/$/, '');
   const h = headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
   return `${h.get('x-forwarded-proto') ?? 'http'}://${host}`;

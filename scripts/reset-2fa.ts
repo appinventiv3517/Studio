@@ -1,9 +1,8 @@
 // Lost your phone? Run `npm run reset-2fa` on the computer that runs the app.
 // It turns two-factor sign-in off for the owner, so the next sign-in sets it up again with a new QR code.
 // Pass an email to reset a different owner login: `npm run reset-2fa -- someone@example.com`.
-import { PrismaClient } from '@prisma/client';
+import { db } from '@/server/db';
 
-const db = new PrismaClient();
 
 async function main() {
   const email = process.argv[2]?.trim().toLowerCase();

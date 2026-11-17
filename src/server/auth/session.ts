@@ -48,7 +48,7 @@ async function issueToken(userId: string) {
 export async function startSession(userId: string) {
   const token = await issueToken(userId);
   // No maxAge: a session cookie, which the browser drops when it is closed, so the next visit asks for a new code.
-  cookies().set(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: '/' });
+  cookies().set(COOKIE, token, { httpOnly: true, sameSite: 'lax', path: '/', secure: !!process.env.SITE_URL?.startsWith('https://') });
   return token;
 }
 
@@ -109,8 +109,9 @@ export async function lookupUser(): Promise<SessionUser | null> {
 export const currentUser = cache(async (): Promise<SessionUser | null> => {
   const h = headers();
   const host = h.get('x-forwarded-host') ?? h.get('host') ?? 'localhost:3000';
+  const base = process.env.API_URL ? process.env.API_URL.replace(/\/$/, '') : `${h.get('x-forwarded-proto') ?? 'http'}://${host}`;
   try {
-    const res = await fetch(`${h.get('x-forwarded-proto') ?? 'http'}://${host}/api/me`, { headers: { cookie: h.get('cookie') ?? '', authorization: h.get('authorization') ?? '' }, cache: 'no-store' });
+    const res = await fetch(`${base}/api/me`, { headers: { cookie: h.get('cookie') ?? '', authorization: h.get('authorization') ?? '' }, cache: 'no-store' });
     const body = (await res.json()) as { ok: boolean; data?: SessionUser };
     return body.ok && body.data ? body.data : null;
   } catch {
