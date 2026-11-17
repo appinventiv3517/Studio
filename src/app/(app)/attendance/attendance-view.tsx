@@ -1,8 +1,9 @@
 'use client';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Check, ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { Badge, Button, Card, Empty, Input, Stat, cx } from '@/components/ui';
+import { Badge, Button, Card, Empty, Input, Select, Stat, cx } from '@/components/ui';
 import { useAction } from '@/client/use-action';
 import { addDays, dayOfWeek, DAY_NAMES, monthEnd } from '@/lib/format';
 import { markAttendance } from '@/client/api/attendance';
@@ -128,6 +129,39 @@ function Monthly({ month, today, rows }: Props) {
           </table>
         </div>
       </Card>
+      <MonthCalendar from={from} days={days} today={today} rows={rows} />
     </>
+  );
+}
+
+/** One person's month laid out as a calendar. Click a day to open it in the Daily tab. */
+function MonthCalendar({ from, days, today, rows }: { from: string; days: string[]; today: string; rows: Row[] }) {
+  const [staffId, setStaffId] = useState(rows[0]?.id ?? '');
+  const row = rows.find((r) => r.id === staffId) ?? rows[0];
+  const by = new Map(row.records.map((x) => [x.date, x]));
+  const present = row.records.filter((x) => x.present).length;
+  const absent = row.records.length - present;
+  const blanks = Array.from({ length: dayOfWeek(from) });
+
+  return (
+    <Card className="mt-5" title="Calendar" subtitle="Pick a person to see their month day by day"
+      actions={<Select value={staffId} onChange={(e) => setStaffId(e.target.value)} aria-label="Staff">{rows.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}</Select>}>
+      <div className="mb-4 flex gap-2"><Badge tone="green">{present} present</Badge><Badge tone="red">{absent} absent</Badge></div>
+      <div className="grid grid-cols-7 gap-1.5 text-center">
+        {DAY_NAMES.map((d) => <div key={d} className="pb-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-mute">{d}</div>)}
+        {blanks.map((_, i) => <div key={`b${i}`} />)}
+        {days.map((d) => {
+          const rec = by.get(d);
+          return (
+            <Link key={d} href={`/attendance?date=${d}`} className={cx('flex h-16 flex-col items-center justify-center rounded-lg border text-[13px] hover:border-violet-400',
+              rec ? (rec.present ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-rose-200 bg-rose-50 text-rose-700') : 'border-line text-ink-soft',
+              d === today && 'ring-2 ring-violet-500')}>
+              <span className="tabular font-semibold">{Number(d.slice(8))}</span>
+              <span className="text-[11px] font-medium">{rec ? (rec.present ? 'Present' : 'Absent') : '–'}</span>
+            </Link>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
